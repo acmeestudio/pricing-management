@@ -44,7 +44,7 @@ export async function parseQuoteImages(imagesBase64: string[]): Promise<ParsedQu
   }))
 
   const response = await openai.chat.completions.create({
-    model: "gpt-4o",
+    model: "gpt-5.4",
     max_tokens: 4096,
     response_format: { type: "json_object" },
     messages: [
