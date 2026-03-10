@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   experimental: {
-    serverComponentsExternalPackages: ["grammy"],
+    serverComponentsExternalPackages: ["grammy", "pdfjs-dist", "pdf-parse"],
   },
 };
 

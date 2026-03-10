@@ -1,5 +1,6 @@
 import OpenAI from "openai"
 import type { ParsedQuoteDocument } from "@/types"
+import { extractPdfText } from "@/lib/pdf/extract-text"
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -33,12 +34,9 @@ Todos los valores monetarios deben ser números, no strings con formato.
 Responde SOLO con JSON válido, sin texto adicional, sin markdown.`
 
 export async function parseQuotePDF(pdfBase64: string): Promise<ParsedQuoteDocument> {
-  // Extraer texto del PDF usando pdf-parse
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const pdfParse = require("pdf-parse/lib/pdf-parse")
   const buffer = Buffer.from(pdfBase64, "base64")
-  const pdfData = await pdfParse(buffer)
-  return parseQuoteText(pdfData.text)
+  const text = await extractPdfText(buffer)
+  return parseQuoteText(text)
 }
 
 export async function parseQuoteText(text: string): Promise<ParsedQuoteDocument> {

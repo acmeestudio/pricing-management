@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from "next/server"
 import OpenAI from "openai"
 import { createServiceClient } from "@/lib/supabase/server"
+import { extractPdfText } from "@/lib/pdf/extract-text"
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
@@ -47,10 +48,7 @@ export async function POST(request: Request) {
     if (file) {
       const arrayBuffer = await file.arrayBuffer()
       const buffer = Buffer.from(arrayBuffer)
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const pdfParse = require("pdf-parse/lib/pdf-parse")
-      const pdfData = await pdfParse(buffer)
-      documentText = pdfData.text
+      documentText = await extractPdfText(buffer)
     }
 
     const response = await openai.chat.completions.create({
