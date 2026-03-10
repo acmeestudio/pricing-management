@@ -1,9 +1,9 @@
 export const dynamic = 'force-dynamic'
 import { NextResponse } from "next/server"
-import Anthropic from "@anthropic-ai/sdk"
+import OpenAI from "openai"
 import { createServiceClient } from "@/lib/supabase/server"
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
 const PARSE_PROMPT = `Eres un asistente que extrae datos de cotizaciones de proveedores de materiales de interiorismo y mobiliario en Colombia.
 
@@ -42,44 +42,30 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Se requiere un archivo PDF o texto" }, { status: 400 })
     }
 
-    let messageContent: Anthropic.MessageParam["content"]
+    let documentText = text ?? ""
 
     if (file) {
       const arrayBuffer = await file.arrayBuffer()
-      const base64 = Buffer.from(arrayBuffer).toString("base64")
-
-      messageContent = [
-        {
-          type: "document",
-          source: {
-            type: "base64",
-            media_type: "application/pdf",
-            data: base64,
-          },
-        } as Anthropic.DocumentBlockParam,
-        {
-          type: "text",
-          text: PARSE_PROMPT,
-        },
-      ]
-    } else {
-      messageContent = [
-        {
-          type: "text",
-          text: `${PARSE_PROMPT}\n\nDocumento a analizar:\n${text}`,
-        },
-      ]
+      const buffer = Buffer.from(arrayBuffer)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const pdfParse = ((await import("pdf-parse")) as any).default ?? (await import("pdf-parse"))
+      const pdfData = await pdfParse(buffer)
+      documentText = pdfData.text
     }
 
-    const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
       max_tokens: 4096,
-      messages: [{ role: "user", content: messageContent }],
+      messages: [
+        {
+          role: "user",
+          content: `${PARSE_PROMPT}\n\nDocumento a analizar:\n${documentText}`,
+        },
+      ],
     })
 
-    const rawText = response.content[0].type === "text" ? response.content[0].text : ""
+    const rawText = response.choices[0]?.message?.content ?? ""
 
-    // Limpiar el JSON por si Claude añade markdown
     const jsonMatch = rawText.match(/\{[\s\S]*\}/)
     if (!jsonMatch) {
       return NextResponse.json({ error: "No se pudo extraer JSON de la respuesta" }, { status: 500 })

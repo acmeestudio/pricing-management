@@ -1,8 +1,8 @@
-import Anthropic from "@anthropic-ai/sdk"
+import OpenAI from "openai"
 import type { ParsedQuoteDocument } from "@/types"
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
 })
 
 const PARSE_PROMPT = `Eres un asistente que extrae datos de cotizaciones de proveedores de materiales de interiorismo y mobiliario en Colombia.
@@ -33,40 +33,17 @@ Todos los valores monetarios deben ser números, no strings con formato.
 Responde SOLO con JSON válido, sin texto adicional, sin markdown.`
 
 export async function parseQuotePDF(pdfBase64: string): Promise<ParsedQuoteDocument> {
-  const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 4096,
-    messages: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "document",
-            source: {
-              type: "base64",
-              media_type: "application/pdf",
-              data: pdfBase64,
-            },
-          } as Anthropic.DocumentBlockParam,
-          {
-            type: "text",
-            text: PARSE_PROMPT,
-          },
-        ],
-      },
-    ],
-  })
-
-  const rawText = response.content[0].type === "text" ? response.content[0].text : ""
-  const jsonMatch = rawText.match(/\{[\s\S]*\}/)
-  if (!jsonMatch) throw new Error("No se pudo extraer JSON de la respuesta de Claude")
-
-  return JSON.parse(jsonMatch[0]) as ParsedQuoteDocument
+  // Extraer texto del PDF usando pdf-parse
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const pdfParse = ((await import("pdf-parse")) as any).default ?? (await import("pdf-parse"))
+  const buffer = Buffer.from(pdfBase64, "base64")
+  const pdfData = await pdfParse(buffer)
+  return parseQuoteText(pdfData.text)
 }
 
 export async function parseQuoteText(text: string): Promise<ParsedQuoteDocument> {
-  const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o",
     max_tokens: 4096,
     messages: [
       {
@@ -76,9 +53,9 @@ export async function parseQuoteText(text: string): Promise<ParsedQuoteDocument>
     ],
   })
 
-  const rawText = response.content[0].type === "text" ? response.content[0].text : ""
+  const rawText = response.choices[0]?.message?.content ?? ""
   const jsonMatch = rawText.match(/\{[\s\S]*\}/)
-  if (!jsonMatch) throw new Error("No se pudo extraer JSON de la respuesta de Claude")
+  if (!jsonMatch) throw new Error("No se pudo extraer JSON de la respuesta de OpenAI")
 
   return JSON.parse(jsonMatch[0]) as ParsedQuoteDocument
 }
