@@ -7,15 +7,20 @@ const openai = new OpenAI({
 
 const PARSE_PROMPT = `Eres un asistente que extrae datos de cotizaciones de proveedores de materiales de interiorismo y mobiliario en Colombia.
 
-Analiza el documento y extrae TODOS los ítems. Si un producto aparece con diferentes cantidades, medidas o materiales, cada variante es un ítem SEPARADO.
+INSTRUCCIONES CRÍTICAS PARA LEER LA TABLA:
+1. Lee la tabla fila por fila, de arriba hacia abajo.
+2. Para cada fila, mantén los valores EXACTAMENTE en la misma fila. NUNCA mezcles valores de filas diferentes.
+3. Identifica las columnas: descripción del producto, cantidad, precio unitario, total.
+4. VERIFICA que quantity × unit_price = total para cada fila. Si no coincide, revisa cuál columna leíste mal.
+5. Usa el total de la fila como referencia para validar cantidad y precio unitario.
 
 Para cada ítem extrae:
 - product_name: nombre del producto/material
 - description: especificaciones (medida, acabado, color, referencia)
-- quantity: cantidad (número)
+- quantity: cantidad (número) — verifica con: total / unit_price = quantity
 - unit: unidad (unidad, metro, m2, kg, rollo, lámina, etc.)
-- unit_price_before_iva: precio unitario SIN IVA en COP (número)
-- total_before_iva: quantity × unit_price_before_iva (número)
+- unit_price_before_iva: precio unitario SIN IVA en COP (número) — verifica con: total / quantity = unit_price
+- total_before_iva: total de la fila (número) — verifica con: quantity × unit_price = total
 
 Datos generales del documento:
 - supplier_name: nombre del proveedor
@@ -28,7 +33,7 @@ Datos generales del documento:
 - iva_included: "yes" si los precios incluyen IVA, "no" si no incluyen, "unknown" si no es claro
 
 Si los precios incluyen IVA 19%, calcula el valor sin IVA dividiendo por 1.19.
-Todos los valores monetarios deben ser números, no strings con formato.
+Todos los valores monetarios deben ser números, sin puntos ni comas de formato.
 
 Responde SOLO con JSON válido, sin texto adicional, sin markdown.`
 
