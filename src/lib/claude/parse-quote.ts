@@ -34,8 +34,8 @@ Responde SOLO con JSON válido, sin texto adicional, sin markdown.`
 
 export async function parseQuotePDF(pdfBase64: string): Promise<ParsedQuoteDocument> {
   // Extraer texto del PDF usando pdf-parse
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const pdfParse = ((await import("pdf-parse")) as any).default ?? (await import("pdf-parse"))
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const pdfParse = require("pdf-parse")
   const buffer = Buffer.from(pdfBase64, "base64")
   const pdfData = await pdfParse(buffer)
   return parseQuoteText(pdfData.text)
