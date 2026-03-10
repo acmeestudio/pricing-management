@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
+import { pdfToImages } from "@/lib/pdf/pdf-to-images"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -57,6 +58,7 @@ export default function NewSupplierQuotePage() {
   const [file, setFile] = useState<File | null>(null)
   const [dragging, setDragging] = useState(false)
   const [parsing, setParsing] = useState(false)
+  const [parsingStatus, setParsingStatus] = useState("")
   const [parsed, setParsed] = useState<ParsedQuote | null>(null)
   const [items, setItems] = useState<ParsedItem[]>([])
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>("")
@@ -98,9 +100,15 @@ export default function NewSupplierQuotePage() {
     if (!file) return
     setParsing(true)
     try {
-      const formData = new FormData()
-      formData.append("file", file)
-      const res = await fetch("/api/quotes/parse", { method: "POST", body: formData })
+      setParsingStatus("Convirtiendo PDF a imágenes...")
+      const images = await pdfToImages(file)
+
+      setParsingStatus(`Analizando ${images.length} página(s) con IA...`)
+      const res = await fetch("/api/quotes/parse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ images }),
+      })
       if (!res.ok) throw new Error("Error al parsear")
       const data: ParsedQuote = await res.json()
       setParsed(data)
@@ -111,6 +119,7 @@ export default function NewSupplierQuotePage() {
       toast({ title: "Error", description: "No se pudo analizar el PDF", variant: "destructive" })
     } finally {
       setParsing(false)
+      setParsingStatus("")
     }
   }
 
@@ -277,7 +286,7 @@ export default function NewSupplierQuotePage() {
                 {parsing ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Analizando con IA...
+                    {parsingStatus || "Analizando con IA..."}
                   </>
                 ) : (
                   <>

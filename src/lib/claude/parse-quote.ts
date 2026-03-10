@@ -16,7 +16,7 @@ Para cada ítem extrae:
 - quantity: cantidad (número)
 - unit: unidad (unidad, metro, m2, kg, rollo, lámina, etc.)
 - unit_price_before_iva: precio unitario SIN IVA en COP (número)
-- total_before_iva: total de esa fila (número) — debe ser igual a quantity × unit_price_before_iva
+- total_before_iva: total de esa fila (número)
 
 Datos generales:
 - supplier_name: nombre del proveedor
@@ -33,6 +33,32 @@ Todos los valores monetarios deben ser números sin puntos ni comas de formato.
 
 Responde SOLO con JSON válido, sin texto adicional, sin markdown.`
 
+/** Analiza imágenes PNG (páginas del PDF renderizadas en el browser) con gpt-4o vision */
+export async function parseQuoteImages(imagesBase64: string[]): Promise<ParsedQuoteDocument> {
+  const imageContent = imagesBase64.map((img) => ({
+    type: "image_url" as const,
+    image_url: {
+      url: `data:image/png;base64,${img}`,
+      detail: "high" as const,
+    },
+  }))
+
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o",
+    max_tokens: 4096,
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "user",
+        content: [...imageContent, { type: "text", text: PARSE_PROMPT }],
+      },
+    ],
+  })
+
+  return JSON.parse(response.choices[0]?.message?.content ?? "") as ParsedQuoteDocument
+}
+
+/** Fallback para Telegram: extrae texto del PDF y lo analiza con gpt-4o-mini */
 export async function parseQuotePDF(pdfBase64: string): Promise<ParsedQuoteDocument> {
   const buffer = Buffer.from(pdfBase64, "base64")
   const text = await extractPdfText(buffer)
@@ -52,19 +78,5 @@ export async function parseQuoteText(text: string): Promise<ParsedQuoteDocument>
     ],
   })
 
-  const raw = response.choices[0]?.message?.content ?? ""
-  const parsed = JSON.parse(raw) as ParsedQuoteDocument
-
-  // Corrección matemática: si qty × price ≠ total, recomputar total
-  if (Array.isArray(parsed.items)) {
-    for (const item of parsed.items) {
-      const qty = item.quantity ?? 0
-      const price = item.unit_price_before_iva ?? 0
-      if (qty > 0 && price > 0) {
-        item.total_before_iva = qty * price
-      }
-    }
-  }
-
-  return parsed
+  return JSON.parse(response.choices[0]?.message?.content ?? "") as ParsedQuoteDocument
 }
