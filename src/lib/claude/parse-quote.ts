@@ -8,11 +8,19 @@ const openai = new OpenAI({
 
 const PARSE_PROMPT = `Eres un asistente que extrae datos de cotizaciones de proveedores de materiales de interiorismo y mobiliario en Colombia.
 
-Analiza el documento y extrae TODOS los ítems. Si un producto aparece con diferentes cantidades, medidas o materiales, cada variante es un ítem SEPARADO.
+REGLAS CRÍTICAS PARA LEER LA TABLA:
+
+1. FILAS CON NÚMEROS = UN ÍTEM: Cada ítem tiene exactamente una fila con números (cantidad, precio, total). Esa fila y sus números van juntos — NO asocies los números de una fila con la descripción de otra fila.
+
+2. DESCRIPCIONES MULTI-LÍNEA: Una descripción de producto puede ocupar varias líneas de texto, pero sigue siendo UN SOLO ítem. El ítem termina cuando aparecen los números (cantidad, precio unitario, total) a la derecha.
+
+3. LEE DE IZQUIERDA A DERECHA: Para cada ítem, identifica en la MISMA fila horizontal: descripción → cantidad → precio unitario → total. Nunca uses los números de una fila para una descripción de otra fila.
+
+4. UN ÍTEM POR CONJUNTO DE NÚMEROS: Hay exactamente tantos ítems como conjuntos de (cantidad + precio + total) existan en la tabla.
 
 Para cada ítem extrae:
-- product_name: nombre completo del producto/material
-- description: especificaciones (medida, acabado, color, referencia)
+- product_name: nombre completo del producto/material (incluyendo todas las líneas de la descripción que corresponden a ese ítem)
+- description: especificaciones adicionales (medida, acabado, color, referencia)
 - quantity: cantidad (número)
 - unit: unidad (unidad, metro, m2, kg, rollo, lámina, etc.)
 - unit_price_before_iva: precio unitario SIN IVA en COP (número)

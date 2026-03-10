@@ -4,7 +4,7 @@
  * Convierte cada página de un PDF a PNG base64 usando pdfjs-dist en el browser.
  * Esto evita todos los problemas de Node.js/Vercel con librerías nativas.
  */
-export async function pdfToImages(file: File, scale = 2): Promise<string[]> {
+export async function pdfToImages(file: File, scale = 3): Promise<string[]> {
   const pdfjsLib = await import("pdfjs-dist")
   pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`
 
