@@ -1,6 +1,5 @@
 import OpenAI from "openai"
 import type { ParsedQuoteDocument } from "@/types"
-import { extractPdfText } from "@/lib/pdf/extract-text"
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -34,14 +33,39 @@ Todos los valores monetarios deben ser números, no strings con formato.
 Responde SOLO con JSON válido, sin texto adicional, sin markdown.`
 
 export async function parseQuotePDF(pdfBase64: string): Promise<ParsedQuoteDocument> {
-  const buffer = Buffer.from(pdfBase64, "base64")
-  const text = await extractPdfText(buffer)
-  return parseQuoteText(text)
+  const response = await openai.chat.completions.create({
+    model: "gpt-4.1",
+    max_tokens: 4096,
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "file",
+            file: {
+              filename: "cotizacion.pdf",
+              file_data: `data:application/pdf;base64,${pdfBase64}`,
+            },
+          } as never,
+          {
+            type: "text",
+            text: PARSE_PROMPT,
+          },
+        ],
+      },
+    ],
+  })
+
+  const rawText = response.choices[0]?.message?.content ?? ""
+  const jsonMatch = rawText.match(/\{[\s\S]*\}/)
+  if (!jsonMatch) throw new Error("No se pudo extraer JSON de la respuesta de OpenAI")
+
+  return JSON.parse(jsonMatch[0]) as ParsedQuoteDocument
 }
 
 export async function parseQuoteText(text: string): Promise<ParsedQuoteDocument> {
   const response = await openai.chat.completions.create({
-    model: "gpt-4o",
+    model: "gpt-4.1",
     max_tokens: 4096,
     messages: [
       {
