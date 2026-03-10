@@ -1,5 +1,6 @@
 import OpenAI from "openai"
 import type { ParsedQuoteDocument } from "@/types"
+import { extractPdfText } from "@/lib/pdf/extract-text"
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -7,13 +8,15 @@ const openai = new OpenAI({
 
 const PARSE_PROMPT = `Eres un asistente que extrae datos de cotizaciones de proveedores de materiales de interiorismo y mobiliario en Colombia.
 
-Para cada ítem de la tabla extrae:
+Analiza el documento y extrae TODOS los ítems. Si un producto aparece con diferentes cantidades, medidas o materiales, cada variante es un ítem SEPARADO.
+
+Para cada ítem extrae:
 - product_name: nombre completo del producto/material
 - description: especificaciones (medida, acabado, color, referencia)
 - quantity: cantidad (número)
 - unit: unidad (unidad, metro, m2, kg, rollo, lámina, etc.)
 - unit_price_before_iva: precio unitario SIN IVA en COP (número)
-- total_before_iva: total de esa fila en COP (número)
+- total_before_iva: total de esa fila (número) — debe ser igual a quantity × unit_price_before_iva
 
 Datos generales:
 - supplier_name: nombre del proveedor
@@ -30,80 +33,15 @@ Todos los valores monetarios deben ser números sin puntos ni comas de formato.
 
 Responde SOLO con JSON válido, sin texto adicional, sin markdown.`
 
-const RETRY_PROMPT = (subtotalDoc: number, subtotalParsed: number) =>
-  `Revisaste mal los ítems. La suma de los totales que extrajiste es ${subtotalParsed.toLocaleString("es-CO")}, pero el subtotal que aparece en el documento es ${subtotalDoc.toLocaleString("es-CO")}. Hay una discrepancia de ${Math.abs(subtotalDoc - subtotalParsed).toLocaleString("es-CO")}.
-
-Vuelve a leer el documento con cuidado. Es probable que hayas confundido columnas de la tabla (cantidad, precio unitario o total). Para cada fila, el valor total impreso en el documento es la fuente de verdad — úsalo para verificar que quantity × unit_price = total_before_iva.
-
-Responde SOLO con JSON válido, sin texto adicional, sin markdown.`
-
-function sumItemTotals(parsed: ParsedQuoteDocument): number {
-  return (parsed.items ?? []).reduce((sum, item) => sum + (item.total_before_iva ?? 0), 0)
-}
-
-function parseJson(raw: string): ParsedQuoteDocument {
-  const match = raw.match(/\{[\s\S]*\}/)
-  if (!match) throw new Error("No se pudo extraer JSON de la respuesta de OpenAI")
-  return JSON.parse(match[0]) as ParsedQuoteDocument
-}
-
 export async function parseQuotePDF(pdfBase64: string): Promise<ParsedQuoteDocument> {
-  const fileContent = {
-    type: "file" as const,
-    file: {
-      filename: "cotizacion.pdf",
-      file_data: `data:application/pdf;base64,${pdfBase64}`,
-    },
-  }
-
-  // Primera pasada
-  const first = await openai.chat.completions.create({
-    model: "gpt-4.1",
-    max_tokens: 4096,
-    response_format: { type: "json_object" },
-    messages: [
-      {
-        role: "user",
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        content: [fileContent as any, { type: "text", text: PARSE_PROMPT }],
-      },
-    ],
-  })
-
-  const parsed = parseJson(first.choices[0]?.message?.content ?? "")
-
-  // Validar contra subtotal del documento
-  const subtotalDoc = parsed.subtotal_before_iva
-  if (subtotalDoc && subtotalDoc > 0) {
-    const subtotalParsed = sumItemTotals(parsed)
-    const diff = Math.abs(subtotalDoc - subtotalParsed) / subtotalDoc
-
-    if (diff > 0.03) {
-      // Más de 3% de diferencia → reintentar con feedback
-      const retry = await openai.chat.completions.create({
-        model: "gpt-4.1",
-        max_tokens: 4096,
-        response_format: { type: "json_object" },
-        messages: [
-          {
-            role: "user",
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            content: [fileContent as any, { type: "text", text: PARSE_PROMPT }],
-          },
-          { role: "assistant", content: first.choices[0]?.message?.content ?? "" },
-          { role: "user", content: RETRY_PROMPT(subtotalDoc, subtotalParsed) },
-        ],
-      })
-      return parseJson(retry.choices[0]?.message?.content ?? "")
-    }
-  }
-
-  return parsed
+  const buffer = Buffer.from(pdfBase64, "base64")
+  const text = await extractPdfText(buffer)
+  return parseQuoteText(text)
 }
 
 export async function parseQuoteText(text: string): Promise<ParsedQuoteDocument> {
   const response = await openai.chat.completions.create({
-    model: "gpt-4.1",
+    model: "gpt-4o-mini",
     max_tokens: 4096,
     response_format: { type: "json_object" },
     messages: [
@@ -114,5 +52,19 @@ export async function parseQuoteText(text: string): Promise<ParsedQuoteDocument>
     ],
   })
 
-  return parseJson(response.choices[0]?.message?.content ?? "")
+  const raw = response.choices[0]?.message?.content ?? ""
+  const parsed = JSON.parse(raw) as ParsedQuoteDocument
+
+  // Corrección matemática: si qty × price ≠ total, recomputar total
+  if (Array.isArray(parsed.items)) {
+    for (const item of parsed.items) {
+      const qty = item.quantity ?? 0
+      const price = item.unit_price_before_iva ?? 0
+      if (qty > 0 && price > 0) {
+        item.total_before_iva = qty * price
+      }
+    }
+  }
+
+  return parsed
 }
