@@ -22,7 +22,7 @@ export function Sidebar() {
   const pathname = usePathname()
 
   return (
-    <aside className="w-64 min-h-screen bg-sidebar text-sidebar-foreground flex flex-col">
+    <aside className="w-64 min-h-screen bg-sidebar text-sidebar-foreground flex flex-col print:hidden">
       {/* Header */}
       <div className="px-6 py-5 border-b border-sidebar-border">
         <div className="flex items-center gap-2">

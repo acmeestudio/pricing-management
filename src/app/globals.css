@@ -75,3 +75,27 @@
     @apply bg-background text-foreground;
   }
 }
+
+@media print {
+  /* Ocultar todo excepto el contenido de la cotización */
+  nav, aside, header, footer,
+  [data-sidebar],
+  .print\\:hidden {
+    display: none !important;
+  }
+
+  /* El layout flex se rompe en impresión, hacemos el main ocupar todo */
+  body > div {
+    display: block !important;
+  }
+
+  main {
+    width: 100% !important;
+    overflow: visible !important;
+  }
+
+  /* Quitar sombras y bordes innecesarios */
+  * {
+    box-shadow: none !important;
+  }
+}
