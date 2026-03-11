@@ -31,6 +31,10 @@ interface ParsedItem {
 interface ParsedQuote {
   supplier_name: string | null
   supplier_nit: string | null
+  supplier_email: string | null
+  supplier_phone: string | null
+  supplier_city: string | null
+  supplier_contact: string | null
   quote_reference: string | null
   quote_date: string | null
   expiry_date: string | null
@@ -161,6 +165,10 @@ export default function NewSupplierQuotePage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             name: parsed.supplier_name,
+            contact_name: parsed.supplier_contact || null,
+            phone: parsed.supplier_phone || null,
+            email: parsed.supplier_email || null,
+            city: parsed.supplier_city || null,
             notes: parsed.supplier_nit ? `NIT: ${parsed.supplier_nit}` : null,
           }),
         })

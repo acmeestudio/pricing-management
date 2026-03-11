@@ -30,9 +30,15 @@ PASO 3 — EXTRAE CADA ÍTEM:
 - unit_price_before_iva: precio unitario SIN IVA en COP
 - total_before_iva: quantity × unit_price_before_iva
 
-Datos generales:
+Datos del proveedor (encabezado del documento):
 - supplier_name: nombre completo de la empresa proveedora (razón social, ej: "FRENCHER SERVICIOS INDUSTRIALES S.A.S")
-- supplier_nit: NIT o RUT de la empresa proveedora (ej: "900123456-7"). Solo el número, sin la palabra "NIT" ni "RUT".
+- supplier_nit: NIT o RUT de la empresa (ej: "900123456-7"). Solo el número, sin "NIT" ni "RUT".
+- supplier_email: correo electrónico del proveedor si aparece en el documento.
+- supplier_phone: teléfono o celular del proveedor si aparece en el documento.
+- supplier_city: ciudad del proveedor si aparece (ej: "Bogotá", "Medellín").
+- supplier_contact: nombre de la persona de contacto si aparece.
+
+Datos de la cotización:
 - quote_reference, quote_date (YYYY-MM-DD o null), expiry_date (YYYY-MM-DD o null)
 - subtotal_before_iva, iva_amount, total_with_iva (números en COP)
 - iva_included: "yes" / "no" / "unknown"
@@ -45,6 +51,10 @@ const QUOTE_SCHEMA = {
   properties: {
     supplier_name: { type: ["string", "null"] },
     supplier_nit: { type: ["string", "null"] },
+    supplier_email: { type: ["string", "null"] },
+    supplier_phone: { type: ["string", "null"] },
+    supplier_city: { type: ["string", "null"] },
+    supplier_contact: { type: ["string", "null"] },
     quote_reference: { type: ["string", "null"] },
     quote_date: { type: ["string", "null"] },
     expiry_date: { type: ["string", "null"] },
@@ -69,7 +79,7 @@ const QUOTE_SCHEMA = {
       },
     },
   },
-  required: ["supplier_name", "supplier_nit", "quote_reference", "quote_date", "expiry_date", "subtotal_before_iva", "iva_amount", "total_with_iva", "iva_included", "items"],
+  required: ["supplier_name", "supplier_nit", "supplier_email", "supplier_phone", "supplier_city", "supplier_contact", "quote_reference", "quote_date", "expiry_date", "subtotal_before_iva", "iva_amount", "total_with_iva", "iva_included", "items"],
   additionalProperties: false,
 }
 
