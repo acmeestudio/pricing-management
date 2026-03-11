@@ -24,6 +24,17 @@ export async function GET(request: Request) {
   if (categoryId) query = query.eq("category_id", categoryId)
 
   const { data, error } = await query
-  if (error) return NextResponse.json({ error: error.message, url: process.env.NEXT_PUBLIC_SUPABASE_URL }, { status: 500 })
-  return NextResponse.json({ items: data, _debug: { url: process.env.NEXT_PUBLIC_SUPABASE_URL, count: data?.length } })
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // TEMP DEBUG: also run a count query to detect cache vs live
+  const { count: liveCount } = await supabase
+    .from("supplier_quote_items")
+    .select("*", { count: "exact", head: true })
+
+  return NextResponse.json({
+    items: data,
+    _live_count: liveCount,
+    _url: process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('\n','[NL]'),
+    _key_prefix: (process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").slice(0,15),
+  })
 }
