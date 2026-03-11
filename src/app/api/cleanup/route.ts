@@ -91,6 +91,13 @@ export async function POST(request: Request) {
     deletedItems,
     deletedQuotes,
     deletedSuppliers,
-    debug: { orphanItemIds: orphanItemIds.length, totalItems: allItems?.length, validQuotes: validQuotes?.length }
+    debug: {
+      orphanItemIds: orphanItemIds.length,
+      totalItems: allItems?.length,
+      validQuotes: validQuotes?.length,
+      supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL?.slice(0, 40),
+      hasServiceKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+      serviceKeyPrefix: process.env.SUPABASE_SERVICE_ROLE_KEY?.slice(0, 15),
+    }
   })
 }
