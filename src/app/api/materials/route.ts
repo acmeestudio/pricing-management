@@ -24,10 +24,8 @@ export async function GET(request: Request) {
   if (categoryId) query = query.eq("category_id", categoryId)
 
   const { data, error } = await query
-  if (error) return NextResponse.json({ error: error.message, supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL }, { status: 500 })
-  // Temporary debug header
-  const res = NextResponse.json(data)
-  res.headers.set("x-supabase-url", process.env.NEXT_PUBLIC_SUPABASE_URL?.slice(0, 40) || "")
-  res.headers.set("x-item-count", String(data?.length || 0))
-  return res
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  // Temporary: prepend debug info
+  const debug = { _debug: { supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL, count: data?.length } }
+  return NextResponse.json({ ...debug, items: data })
 }
