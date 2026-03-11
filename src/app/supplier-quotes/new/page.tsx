@@ -36,6 +36,7 @@ interface ParsedQuote {
   subtotal_before_iva: number | null
   iva_amount: number | null
   total_with_iva: number | null
+  iva_included: "yes" | "no" | "unknown"
   items: ParsedItem[]
 }
 
@@ -65,6 +66,8 @@ export default function NewSupplierQuotePage() {
   const [categories, setCategories] = useState<Category[]>([])
   const [quoteDate, setQuoteDate] = useState(new Date().toISOString().split("T")[0])
   const [saving, setSaving] = useState(false)
+  const [ivaRate, setIvaRate] = useState(19)
+  const [showIvaColumns, setShowIvaColumns] = useState(false)
 
   // Cargar proveedores y categorías al montar
   useEffect(() => {
@@ -118,6 +121,7 @@ export default function NewSupplierQuotePage() {
       setParsed(data)
       setItems((data.items || []).map(item => ({ ...item, selected: true })))
       if (data.quote_date) setQuoteDate(data.quote_date)
+      setShowIvaColumns(data.iva_included !== "yes")
       setStep("review")
     } catch {
       toast({ title: "Error", description: "No se pudo analizar el PDF", variant: "destructive" })
@@ -309,6 +313,7 @@ export default function NewSupplierQuotePage() {
   // Step: review
   const selectedCount = items.filter(i => i.selected).length
   const total = items.reduce((sum, i) => i.selected ? sum + i.total_before_iva : sum, 0)
+  const ivaMultiplier = 1 + ivaRate / 100
 
   return (
     <div className="p-8">
@@ -329,6 +334,9 @@ export default function NewSupplierQuotePage() {
           <div className="text-sm text-right">
             <div className="text-muted-foreground">{selectedCount} seleccionados</div>
             <div className="font-semibold">{formatCOP(total)} sin IVA</div>
+            {showIvaColumns && (
+              <div className="text-muted-foreground">{formatCOP(total * ivaMultiplier)} con IVA ({ivaRate}%)</div>
+            )}
           </div>
           <Button onClick={handleSave} disabled={saving || selectedCount === 0}>
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
@@ -338,7 +346,7 @@ export default function NewSupplierQuotePage() {
       </div>
 
       {/* Info de la cotización */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-4 gap-4 mb-6">
         <div className="space-y-1">
           <Label>Fecha de cotización</Label>
           <Input
@@ -368,6 +376,34 @@ export default function NewSupplierQuotePage() {
             placeholder="Auto-detectada del PDF"
           />
         </div>
+        <div className="space-y-1">
+          <Label>Mostrar IVA</Label>
+          <div className="flex items-center gap-3 h-10">
+            <input
+              type="checkbox"
+              id="toggle-iva"
+              checked={showIvaColumns}
+              onChange={(e) => setShowIvaColumns(e.target.checked)}
+              className="rounded w-4 h-4"
+            />
+            <label htmlFor="toggle-iva" className="text-sm text-muted-foreground cursor-pointer">
+              Precios sin IVA
+            </label>
+            {showIvaColumns && (
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={ivaRate}
+                  onChange={(e) => setIvaRate(parseFloat(e.target.value) || 0)}
+                  className="w-20 text-right"
+                />
+                <span className="text-sm text-muted-foreground">%</span>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       <Card>
@@ -389,7 +425,9 @@ export default function NewSupplierQuotePage() {
                 <TableHead className="text-right">Cantidad</TableHead>
                 <TableHead>Unidad</TableHead>
                 <TableHead className="text-right">Precio Unit. (sin IVA)</TableHead>
-                <TableHead className="text-right">Total</TableHead>
+                {showIvaColumns && <TableHead className="text-right">Precio Unit. (con IVA)</TableHead>}
+                <TableHead className="text-right">Total (sin IVA)</TableHead>
+                {showIvaColumns && <TableHead className="text-right">Total (con IVA)</TableHead>}
                 <TableHead></TableHead>
               </TableRow>
             </TableHeader>
@@ -457,9 +495,19 @@ export default function NewSupplierQuotePage() {
                       className="w-32 text-right"
                     />
                   </TableCell>
+                  {showIvaColumns && (
+                    <TableCell className="text-right text-muted-foreground">
+                      {formatCOP(item.unit_price_before_iva * ivaMultiplier)}
+                    </TableCell>
+                  )}
                   <TableCell className="text-right font-medium">
                     {formatCOP(item.total_before_iva)}
                   </TableCell>
+                  {showIvaColumns && (
+                    <TableCell className="text-right font-semibold text-blue-700">
+                      {formatCOP(item.total_before_iva * ivaMultiplier)}
+                    </TableCell>
+                  )}
                   <TableCell>
                     <Button
                       variant="ghost"
