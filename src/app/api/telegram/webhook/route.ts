@@ -1,196 +1,462 @@
-export const dynamic = 'force-dynamic'
-import { NextResponse } from "next/server"
-import { Bot } from "grammy"
-import { createServiceClient } from "@/lib/supabase/server"
-import { formatCOP } from "@/lib/pricing"
+export const runtime = 'nodejs'
+export const maxDuration = 60
 
-const token = process.env.TELEGRAM_BOT_TOKEN
-if (!token) console.warn("TELEGRAM_BOT_TOKEN no configurado")
+import { NextResponse } from 'next/server'
+import { createServiceClient } from '@/lib/supabase/server'
+import OpenAI from 'openai'
+import pdfParse from 'pdf-parse'
 
-let bot: Bot | null = null
+const TOKEN = process.env.TELEGRAM_BOT_TOKEN || ''
+const TELEGRAM_API = `https://api.telegram.org/bot${TOKEN}`
 
-function getBot() {
-  if (!bot && token) {
-    bot = new Bot(token)
-    setupBot(bot)
+// ─── Telegram helpers ────────────────────────────────────────────────────────
+
+async function sendMessage(
+  chatId: number | string,
+  text: string,
+  options?: Record<string, unknown>
+) {
+  await fetch(`${TELEGRAM_API}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: chatId, text, ...options }),
+  })
+}
+
+async function answerCallbackQuery(id: string, text?: string) {
+  await fetch(`${TELEGRAM_API}/answerCallbackQuery`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ callback_query_id: id, text }),
+  })
+}
+
+async function editMessageText(
+  chatId: number | string,
+  messageId: number,
+  text: string
+) {
+  await fetch(`${TELEGRAM_API}/editMessageText`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: chatId, message_id: messageId, text }),
+  })
+}
+
+// ─── Formatting ───────────────────────────────────────────────────────────────
+
+const formatCOP = (value: number) =>
+  new Intl.NumberFormat('es-CO', {
+    style: 'currency',
+    currency: 'COP',
+    minimumFractionDigits: 0,
+  }).format(value)
+
+// ─── GPT-4o extraction ───────────────────────────────────────────────────────
+
+interface ExtractedSupplier {
+  name: string
+  contact_name: string | null
+  email: string | null
+  phone: string | null
+  city: string | null
+  nit: string | null
+}
+
+interface ExtractedQuote {
+  reference: string | null
+  quote_date: string
+  expiry_date: string | null
+  notes: string | null
+}
+
+interface ExtractedItem {
+  product_name: string
+  description: string | null
+  quantity: number
+  unit: string
+  unit_price_before_iva: number
+}
+
+interface ExtractedData {
+  supplier: ExtractedSupplier
+  quote: ExtractedQuote
+  items: ExtractedItem[]
+}
+
+async function extractPdfData(pdfText: string): Promise<ExtractedData> {
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4o',
+    messages: [
+      {
+        role: 'system',
+        content:
+          'Eres un asistente experto en extraer información de cotizaciones de proveedores colombianos. ' +
+          'Extrae los datos del texto del PDF y devuelve un JSON con la estructura exacta indicada. ' +
+          'Los precios deben ser en COP sin IVA. Si un campo no aparece, usa null. ' +
+          'Las fechas deben ser en formato YYYY-MM-DD. ' +
+          'Responde ÚNICAMENTE con el JSON, sin texto adicional ni bloques de código.',
+      },
+      {
+        role: 'user',
+        content:
+          `Extrae la información de esta cotización y devuelve JSON con esta estructura exacta:\n` +
+          `{\n` +
+          `  "supplier": { "name": "...", "contact_name": null, "email": null, "phone": null, "city": null, "nit": null },\n` +
+          `  "quote": { "reference": null, "quote_date": "YYYY-MM-DD", "expiry_date": null, "notes": null },\n` +
+          `  "items": [{ "product_name": "...", "description": null, "quantity": 1, "unit": "unidad", "unit_price_before_iva": 0 }]\n` +
+          `}\n\n` +
+          `TEXTO DEL PDF:\n${pdfText}`,
+      },
+    ],
+    temperature: 0,
+  })
+
+  const raw = response.choices[0]?.message?.content?.trim() || '{}'
+  return JSON.parse(raw) as ExtractedData
+}
+
+// ─── PDF handler ─────────────────────────────────────────────────────────────
+
+async function handlePdfDocument(
+  chatId: number | string,
+  fileId: string
+) {
+  await sendMessage(chatId, '📄 Analizando cotización con IA... un momento.')
+
+  // 1. Download file from Telegram
+  const fileInfoRes = await fetch(`${TELEGRAM_API}/getFile?file_id=${fileId}`)
+  const fileInfo = await fileInfoRes.json()
+  const filePath: string = fileInfo?.result?.file_path
+  if (!filePath) {
+    await sendMessage(chatId, 'No pude descargar el archivo. Inténtalo de nuevo.')
+    return
   }
-  return bot
-}
 
-function setupBot(bot: Bot) {
-  bot.command("start", async (ctx) => {
-    await ctx.reply(
-      "👋 Bienvenido a *Acme Estudio*\n\n" +
-      "Puedo ayudarte a:\n" +
-      "• Analizar cotizaciones de proveedores (envía un PDF)\n" +
-      "• Consultar precios de materiales\n" +
-      "• Ver costos de productos\n\n" +
-      "Usa /ayuda para ver todos los comandos.",
-      { parse_mode: "Markdown" }
-    )
-  })
+  const fileRes = await fetch(
+    `https://api.telegram.org/file/bot${TOKEN}/${filePath}`
+  )
+  const pdfBuffer = Buffer.from(await fileRes.arrayBuffer())
 
-  bot.command("ayuda", async (ctx) => {
-    await ctx.reply(
-      "📋 *Comandos disponibles:*\n\n" +
-      "/precio <material> — Consultar precio de un material\n" +
-      "/producto <nombre> — Ver costo y precio de venta\n" +
-      "/comparar <material> — Comparar proveedores\n" +
-      "/ayuda — Esta ayuda\n\n" +
-      "También puedes enviarme un PDF de cotización y lo analizaré automáticamente.",
-      { parse_mode: "Markdown" }
-    )
-  })
+  // 2. Extract text with pdf-parse
+  let pdfText = ''
+  try {
+    const parsed = await pdfParse(pdfBuffer)
+    pdfText = parsed.text
+  } catch {
+    await sendMessage(chatId, 'No pude leer el PDF. Asegúrate de que no esté protegido.')
+    return
+  }
 
-  bot.command("precio", async (ctx) => {
-    const materialName = ctx.match
-    if (!materialName) {
-      await ctx.reply("Uso: /precio <nombre del material>\nEjemplo: /precio madera roble")
-      return
-    }
+  if (!pdfText.trim()) {
+    await sendMessage(chatId, 'El PDF no contiene texto legible. Puede ser una imagen escaneada.')
+    return
+  }
 
-    const supabase = createServiceClient()
-    const { data } = await supabase
-      .from("supplier_quote_items")
-      .select("*, supplier:suppliers(name)")
-      .ilike("product_name", `%${materialName}%`)
-      .eq("is_approved", true)
-      .order("priority")
-      .limit(5)
+  // 3. Extract structured data with GPT-4o
+  let data: ExtractedData
+  try {
+    data = await extractPdfData(pdfText)
+  } catch (err) {
+    console.error('GPT-4o extraction error:', err)
+    await sendMessage(chatId, 'Error al analizar el PDF con IA. Inténtalo desde la web app.')
+    return
+  }
 
-    if (!data?.length) {
-      await ctx.reply(`No encontré cotizaciones para "${materialName}". Sube una cotización primero.`)
-      return
-    }
+  if (!data.items?.length) {
+    await sendMessage(chatId, 'No pude extraer ítems de este PDF. Inténtalo desde la web app.')
+    return
+  }
 
-    const lines = data.map((item) => {
-      const priorityEmoji = item.priority === 1 ? "🟢" : item.priority === 2 ? "🟡" : "🔴"
-      const supplierName = (item.supplier as { name: string } | null)?.name || "Desconocido"
-      return `${priorityEmoji} P${item.priority || "?"} — ${supplierName}: ${formatCOP(item.unit_price_before_iva)}/${item.unit}`
-    })
+  // 4. Save to Supabase
+  const supabase = createServiceClient()
 
-    await ctx.reply(
-      `💰 *Precios de ${materialName}:*\n\n${lines.join("\n")}`,
-      { parse_mode: "Markdown" }
-    )
-  })
+  // Find or create supplier
+  let supplierId: string
+  const { data: existingSupplier } = await supabase
+    .from('suppliers')
+    .select('id')
+    .ilike('name', data.supplier.name)
+    .maybeSingle()
 
-  bot.command("producto", async (ctx) => {
-    const productName = ctx.match
-    if (!productName) {
-      await ctx.reply("Uso: /producto <nombre del producto>\nEjemplo: /producto mesa comedor")
-      return
-    }
-
-    const supabase = createServiceClient()
-    const { data } = await supabase
-      .from("sellable_products")
-      .select("*")
-      .ilike("name", `%${productName}%`)
-      .eq("is_active", true)
-      .limit(3)
-
-    if (!data?.length) {
-      await ctx.reply(`No encontré el producto "${productName}".`)
-      return
-    }
-
-    const product = data[0]
-    const msg = [
-      `📦 *${product.name}*`,
-      ``,
-      `Costo producción: ${formatCOP(product.production_cost)}`,
-      `Costo total: ${formatCOP(product.total_cost)}`,
-      `Margen: ${product.margin_percentage}%`,
-      `Precio sin IVA: ${formatCOP(product.sale_price_before_iva)}`,
-      `IVA (${product.iva_percentage}%): ${formatCOP(product.iva_amount)}`,
-      `*Precio final: ${formatCOP(product.sale_price_with_iva)}*`,
-      `Ganancia: ${formatCOP(product.profit_per_unit)}`,
-    ].join("\n")
-
-    await ctx.reply(msg, { parse_mode: "Markdown" })
-  })
-
-  // Manejar PDFs enviados por el usuario
-  bot.on(":document", async (ctx) => {
-    const doc = ctx.message?.document
-    if (!doc || doc.mime_type !== "application/pdf") {
-      await ctx.reply("Por favor envía un archivo PDF de cotización.")
-      return
-    }
-
-    await ctx.reply("📄 Analizando cotización con IA... un momento.")
-
-    try {
-      const fileInfo = await ctx.api.getFile(doc.file_id)
-      const fileUrl = `https://api.telegram.org/file/bot${token}/${fileInfo.file_path}`
-
-      const fileResponse = await fetch(fileUrl)
-      const blob = await fileResponse.blob()
-
-      const formData = new FormData()
-      formData.append("file", blob, "cotizacion.pdf")
-
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
-      const parseResponse = await fetch(`${appUrl}/api/quotes/parse`, {
-        method: "POST",
-        body: formData,
+  if (existingSupplier) {
+    supplierId = existingSupplier.id
+  } else {
+    const { data: newSupplier, error: supplierError } = await supabase
+      .from('suppliers')
+      .insert({
+        name: data.supplier.name,
+        contact_name: data.supplier.contact_name,
+        email: data.supplier.email,
+        phone: data.supplier.phone,
+        city: data.supplier.city,
+        notes: data.supplier.nit ? `NIT: ${data.supplier.nit}` : null,
       })
+      .select('id')
+      .single()
 
-      if (!parseResponse.ok) throw new Error("Error al parsear")
-
-      const parsed = await parseResponse.json()
-      const items = parsed.items || []
-
-      if (!items.length) {
-        await ctx.reply("No pude extraer ítems de este PDF. Intenta con la web app.")
-        return
-      }
-
-      const supplierName = parsed.supplier_name || "Desconocido"
-      const dateStr = parsed.quote_date || new Date().toLocaleDateString("es-CO")
-
-      const itemLines = items.slice(0, 10).map((item: {
-        product_name: string
-        quantity: number
-        unit: string
-        unit_price_before_iva: number
-        total_before_iva: number
-      }, i: number) =>
-        `${i + 1}. ${item.product_name} — ${item.quantity}${item.unit} — ${formatCOP(item.unit_price_before_iva)}/${item.unit} — ${formatCOP(item.total_before_iva)}`
-      ).join("\n")
-
-      const more = items.length > 10 ? `\n... y ${items.length - 10} más` : ""
-
-      await ctx.reply(
-        `📋 *Detecté ${items.length} ítems del proveedor ${supplierName}:*\n\n${itemLines}${more}\n\nPrecios SIN IVA. Fecha: ${dateStr}\n\n_Para registrar, usa la web app: ${process.env.NEXT_PUBLIC_APP_URL}_`,
-        { parse_mode: "Markdown" }
-      )
-    } catch (err) {
-      console.error("Error handling PDF:", err)
-      await ctx.reply("Ocurrió un error al analizar el PDF. Inténtalo desde la web app.")
+    if (supplierError || !newSupplier) {
+      console.error('Supplier insert error:', supplierError)
+      await sendMessage(chatId, 'Error al guardar el proveedor en la base de datos.')
+      return
     }
+    supplierId = newSupplier.id
+  }
+
+  // Calculate totals
+  const subtotal = data.items.reduce(
+    (sum, item) => sum + item.unit_price_before_iva * item.quantity,
+    0
+  )
+  const ivaAmount = subtotal * 0.19
+  const totalWithIva = subtotal + ivaAmount
+
+  // Create supplier_quote
+  const { data: quote, error: quoteError } = await supabase
+    .from('supplier_quotes')
+    .insert({
+      supplier_id: supplierId,
+      quote_reference: data.quote.reference,
+      quote_date: data.quote.quote_date || new Date().toISOString().split('T')[0],
+      expiry_date: data.quote.expiry_date,
+      currency: 'COP',
+      status: 'pending',
+      source: 'telegram',
+      notes: data.quote.notes,
+      subtotal_before_iva: subtotal,
+      iva_amount: ivaAmount,
+      total_with_iva: totalWithIva,
+    })
+    .select('id')
+    .single()
+
+  if (quoteError || !quote) {
+    console.error('Quote insert error:', quoteError)
+    await sendMessage(chatId, 'Error al guardar la cotización en la base de datos.')
+    return
+  }
+
+  // Insert items
+  const itemRows = data.items.map((item) => ({
+    supplier_quote_id: quote.id,
+    supplier_id: supplierId,
+    product_name: item.product_name,
+    description: item.description,
+    quantity: item.quantity,
+    unit: item.unit,
+    unit_price_before_iva: item.unit_price_before_iva,
+    total_before_iva: item.unit_price_before_iva * item.quantity,
+    is_approved: false,
+    quote_date: data.quote.quote_date || new Date().toISOString().split('T')[0],
+  }))
+
+  const { error: itemsError } = await supabase
+    .from('supplier_quote_items')
+    .insert(itemRows)
+
+  if (itemsError) {
+    console.error('Items insert error:', itemsError)
+    await sendMessage(chatId, 'Error al guardar los ítems de la cotización.')
+    return
+  }
+
+  // 5. Build summary message
+  const displayItems = data.items.slice(0, 10)
+  const more = data.items.length > 10 ? `\n... y ${data.items.length - 10} más` : ''
+
+  const itemLines = displayItems
+    .map(
+      (item, i) =>
+        `${i + 1}. ${item.product_name} — ${item.quantity} ${item.unit} — ${formatCOP(item.unit_price_before_iva)}/${item.unit}`
+    )
+    .join('\n')
+
+  const summaryText =
+    `📋 Cotización de ${data.supplier.name}\n` +
+    `${data.items.length} ítems detectados\n\n` +
+    `${itemLines}${more}\n\n` +
+    `Subtotal (sin IVA): ${formatCOP(subtotal)}\n` +
+    `IVA (19%): ${formatCOP(ivaAmount)}\n` +
+    `Total: ${formatCOP(totalWithIva)}\n\n` +
+    `¿Qué deseas hacer con esta cotización?`
+
+  await sendMessage(chatId, summaryText, {
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: '✅ Aprobar', callback_data: `approve:${quote.id}` },
+          { text: '❌ Descartar', callback_data: `reject:${quote.id}` },
+        ],
+      ],
+    },
   })
 }
+
+// ─── Callback query handler ──────────────────────────────────────────────────
+
+async function handleCallbackQuery(
+  callbackQueryId: string,
+  chatId: number | string,
+  messageId: number,
+  data: string
+) {
+  const supabase = createServiceClient()
+
+  if (data.startsWith('approve:')) {
+    const quoteId = data.replace('approve:', '')
+
+    const { error } = await supabase
+      .from('supplier_quotes')
+      .update({ status: 'approved' })
+      .eq('id', quoteId)
+
+    await answerCallbackQuery(callbackQueryId, 'Cotización aprobada')
+
+    if (error) {
+      await editMessageText(chatId, messageId, '❌ Error al aprobar la cotización.')
+    } else {
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || ''
+      await editMessageText(
+        chatId,
+        messageId,
+        `✅ Cotización aprobada correctamente.\n\nVer en la app: ${appUrl}/supplier-quotes`
+      )
+    }
+  } else if (data.startsWith('reject:')) {
+    const quoteId = data.replace('reject:', '')
+
+    // Delete items first, then the quote
+    await supabase.from('supplier_quote_items').delete().eq('supplier_quote_id', quoteId)
+    const { error } = await supabase.from('supplier_quotes').delete().eq('id', quoteId)
+
+    await answerCallbackQuery(callbackQueryId, 'Cotización descartada')
+
+    if (error) {
+      await editMessageText(chatId, messageId, '❌ Error al descartar la cotización.')
+    } else {
+      await editMessageText(chatId, messageId, '🗑️ Cotización descartada y eliminada.')
+    }
+  } else {
+    await answerCallbackQuery(callbackQueryId)
+  }
+}
+
+// ─── Text chat handler ────────────────────────────────────────────────────────
+
+async function handleTextMessage(chatId: number | string, text: string) {
+  const supabase = createServiceClient()
+
+  // Fetch some materials context for GPT-4o
+  const { data: materials } = await supabase
+    .from('supplier_quote_items')
+    .select('product_name, unit_price_before_iva, unit')
+    .eq('is_approved', true)
+    .order('product_name')
+    .limit(50)
+
+  const materialsContext =
+    materials && materials.length > 0
+      ? materials
+          .map((m) => `- ${m.product_name}: ${formatCOP(m.unit_price_before_iva)}/${m.unit}`)
+          .join('\n')
+      : 'No hay materiales registrados aún.'
+
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4o',
+    messages: [
+      {
+        role: 'system',
+        content:
+          'Eres el asistente de Acme Estudio, una empresa de diseño y fabricación de muebles en Colombia. ' +
+          'Ayudas con precios de materiales, costos de producción y cotizaciones de proveedores. ' +
+          'Responde siempre en español, de forma concisa y útil. ' +
+          'Todos los precios son en COP (pesos colombianos).\n\n' +
+          `Materiales disponibles con precio aprobado:\n${materialsContext}`,
+      },
+      { role: 'user', content: text },
+    ],
+    temperature: 0.7,
+    max_tokens: 500,
+  })
+
+  const reply =
+    response.choices[0]?.message?.content?.trim() ||
+    'No pude generar una respuesta. Inténtalo de nuevo.'
+
+  await sendMessage(chatId, reply)
+}
+
+// ─── Main POST handler ────────────────────────────────────────────────────────
 
 export async function POST(request: Request) {
-  // Verificar secret
-  const secret = request.headers.get("x-telegram-bot-api-secret-token")
-  if (process.env.TELEGRAM_WEBHOOK_SECRET && secret !== process.env.TELEGRAM_WEBHOOK_SECRET) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  // Validate secret token
+  const secret = request.headers.get('x-telegram-bot-api-secret-token')
+  if (
+    process.env.TELEGRAM_WEBHOOK_SECRET &&
+    secret !== process.env.TELEGRAM_WEBHOOK_SECRET
+  ) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const currentBot = getBot()
-  if (!currentBot) {
-    return NextResponse.json({ error: "Bot no configurado" }, { status: 500 })
+  let update: Record<string, unknown>
+  try {
+    update = await request.json()
+  } catch {
+    return NextResponse.json({ ok: true })
   }
 
   try {
-    const update = await request.json()
-    await currentBot.handleUpdate(update)
-    return NextResponse.json({ ok: true })
+    // Handle callback_query (inline button presses)
+    if (update.callback_query) {
+      const cq = update.callback_query as {
+        id: string
+        data: string
+        message: { chat: { id: number }; message_id: number }
+      }
+      await handleCallbackQuery(
+        cq.id,
+        cq.message.chat.id,
+        cq.message.message_id,
+        cq.data
+      )
+      return NextResponse.json({ ok: true })
+    }
+
+    // Handle regular messages
+    if (update.message) {
+      const message = update.message as {
+        chat: { id: number }
+        document?: { file_id: string; mime_type: string }
+        text?: string
+      }
+      const chatId = message.chat.id
+
+      // PDF document
+      if (message.document && message.document.mime_type === 'application/pdf') {
+        await handlePdfDocument(chatId, message.document.file_id)
+        return NextResponse.json({ ok: true })
+      }
+
+      // Non-PDF document
+      if (message.document) {
+        await sendMessage(chatId, 'Por favor envía un archivo PDF de cotización.')
+        return NextResponse.json({ ok: true })
+      }
+
+      // Text message
+      if (message.text) {
+        await handleTextMessage(chatId, message.text)
+        return NextResponse.json({ ok: true })
+      }
+    }
   } catch (err) {
-    console.error("Telegram webhook error:", err)
-    return NextResponse.json({ error: "Internal error" }, { status: 500 })
+    console.error('Telegram webhook error:', err)
   }
+
+  // Always return 200 so Telegram doesn't retry
+  return NextResponse.json({ ok: true })
 }
