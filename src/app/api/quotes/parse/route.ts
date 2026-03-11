@@ -1,19 +1,26 @@
 export const dynamic = 'force-dynamic'
 import { NextResponse } from "next/server"
-import { parseQuoteImages, parseQuoteText, parseQuotePDF } from "@/lib/claude/parse-quote"
+import { parseQuotePDF, parseQuoteText } from "@/lib/claude/parse-quote"
 
 export async function POST(request: Request) {
   try {
     const contentType = request.headers.get("content-type") ?? ""
 
-    // Flujo web: imágenes PNG renderizadas en el browser
+    // Flujo web: PDF base64 desde el browser
     if (contentType.includes("application/json")) {
-      const { images } = await request.json() as { images?: string[] }
-      if (!images?.length) {
-        return NextResponse.json({ error: "No se enviaron imágenes" }, { status: 400 })
+      const body = await request.json() as { pdf?: string; text?: string }
+
+      if (body.pdf) {
+        const parsed = await parseQuotePDF(body.pdf)
+        return NextResponse.json(parsed)
       }
-      const parsed = await parseQuoteImages(images)
-      return NextResponse.json(parsed)
+
+      if (body.text) {
+        const parsed = await parseQuoteText(body.text)
+        return NextResponse.json(parsed)
+      }
+
+      return NextResponse.json({ error: "Se requiere pdf o text" }, { status: 400 })
     }
 
     // Flujo Telegram: FormData con PDF o texto
@@ -22,7 +29,7 @@ export async function POST(request: Request) {
     const text = formData.get("text") as string | null
 
     if (!file && !text) {
-      return NextResponse.json({ error: "Se requiere imágenes, archivo PDF o texto" }, { status: 400 })
+      return NextResponse.json({ error: "Se requiere archivo PDF o texto" }, { status: 400 })
     }
 
     let parsed

@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { pdfToImages } from "@/lib/pdf/pdf-to-images"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -100,14 +99,19 @@ export default function NewSupplierQuotePage() {
     if (!file) return
     setParsing(true)
     try {
-      setParsingStatus("Convirtiendo PDF a imágenes...")
-      const images = await pdfToImages(file)
+      setParsingStatus("Preparando PDF...")
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = (e) => resolve((e.target?.result as string).split(",")[1])
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      })
 
-      setParsingStatus(`Analizando ${images.length} página(s) con IA...`)
+      setParsingStatus("Analizando con IA...")
       const res = await fetch("/api/quotes/parse", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ images }),
+        body: JSON.stringify({ pdf: base64 }),
       })
       if (!res.ok) throw new Error("Error al parsear")
       const data: ParsedQuote = await res.json()

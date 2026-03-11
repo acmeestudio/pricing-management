@@ -9,81 +9,110 @@ const openai = new OpenAI({
 const PARSE_PROMPT = `Eres un asistente que extrae datos de cotizaciones de proveedores de materiales de interiorismo y mobiliario en Colombia.
 
 REGLAS CRÍTICAS PARA LEER LA TABLA:
+1. Cada ítem tiene exactamente una fila con números (cantidad, precio unitario, total). Esos tres valores siempre van juntos en la misma fila horizontal.
+2. Una descripción de producto puede ocupar VARIAS LÍNEAS de texto consecutivas pero sigue siendo UN SOLO ítem. No crees ítems separados por líneas de texto que no tienen números asociados.
+3. Solo crea un ítem nuevo cuando haya un nuevo conjunto de números (cantidad + precio + total) en la tabla.
+4. Lee de izquierda a derecha: descripción → cantidad → precio unitario → total. Nunca uses los números de una fila con la descripción de otra.
 
-1. FILAS CON NÚMEROS = UN ÍTEM: Cada ítem tiene exactamente una fila con números (cantidad, precio, total). Esa fila y sus números van juntos — NO asocies los números de una fila con la descripción de otra fila.
-
-2. DESCRIPCIONES MULTI-LÍNEA: Una descripción de producto puede ocupar varias líneas de texto, pero sigue siendo UN SOLO ítem. El ítem termina cuando aparecen los números (cantidad, precio unitario, total) a la derecha.
-
-3. LEE DE IZQUIERDA A DERECHA: Para cada ítem, identifica en la MISMA fila horizontal: descripción → cantidad → precio unitario → total. Nunca uses los números de una fila para una descripción de otra fila.
-
-4. UN ÍTEM POR CONJUNTO DE NÚMEROS: Hay exactamente tantos ítems como conjuntos de (cantidad + precio + total) existan en la tabla.
-
-Para cada ítem extrae:
-- product_name: nombre completo del producto/material (incluyendo todas las líneas de la descripción que corresponden a ese ítem)
-- description: especificaciones adicionales (medida, acabado, color, referencia)
-- quantity: cantidad (número)
-- unit: unidad (unidad, metro, m2, kg, rollo, lámina, etc.)
+Para cada ítem:
+- product_name: nombre completo del producto (todas las líneas de descripción que pertenecen a ese ítem)
+- description: especificaciones adicionales (medida, acabado, color, referencia), puede ser null
+- quantity: cantidad numérica
+- unit: unidad de medida (unidad, metro, m2, kg, rollo, lámina, etc.)
 - unit_price_before_iva: precio unitario SIN IVA en COP (número)
-- total_before_iva: total de esa fila (número)
+- total_before_iva: total de esa fila = quantity × unit_price_before_iva
 
-Datos generales:
-- supplier_name: nombre del proveedor
-- quote_reference: número de cotización
-- quote_date: fecha en formato YYYY-MM-DD (o null)
-- expiry_date: fecha de vigencia en formato YYYY-MM-DD (o null)
-- subtotal_before_iva: subtotal sin IVA del documento (número o null)
-- iva_amount: monto del IVA (número o null)
-- total_with_iva: total con IVA (número o null)
-- iva_included: "yes" si los precios incluyen IVA, "no" si no, "unknown" si no es claro
+Datos generales del documento:
+- supplier_name: nombre del proveedor (string o null)
+- quote_reference: número de cotización (string o null)
+- quote_date: fecha en formato YYYY-MM-DD (string o null)
+- expiry_date: fecha de vigencia YYYY-MM-DD (string o null)
+- subtotal_before_iva: subtotal sin IVA (number o null)
+- iva_amount: monto del IVA (number o null)
+- total_with_iva: total con IVA (number o null)
+- iva_included: "yes" si precios incluyen IVA, "no" si no incluyen, "unknown" si no es claro
 
-Si los precios incluyen IVA 19%, divide por 1.19 para obtener el valor sin IVA.
-Todos los valores monetarios deben ser números sin puntos ni comas de formato.
+Si los precios incluyen IVA 19%, divide entre 1.19 para obtener el valor sin IVA.
+Todos los valores monetarios son números sin puntos ni comas de formato.`
 
-Responde SOLO con JSON válido, sin texto adicional, sin markdown.`
-
-/** Analiza imágenes PNG (páginas del PDF renderizadas en el browser) con gpt-4o vision */
-export async function parseQuoteImages(imagesBase64: string[]): Promise<ParsedQuoteDocument> {
-  const imageContent = imagesBase64.map((img) => ({
-    type: "image_url" as const,
-    image_url: {
-      url: `data:image/png;base64,${img}`,
-      detail: "high" as const,
+// JSON Schema estricto — garantiza estructura exacta sin campos inventados
+const QUOTE_SCHEMA = {
+  type: "object",
+  properties: {
+    supplier_name: { type: ["string", "null"] },
+    quote_reference: { type: ["string", "null"] },
+    quote_date: { type: ["string", "null"] },
+    expiry_date: { type: ["string", "null"] },
+    subtotal_before_iva: { type: ["number", "null"] },
+    iva_amount: { type: ["number", "null"] },
+    total_with_iva: { type: ["number", "null"] },
+    iva_included: { type: "string", enum: ["yes", "no", "unknown"] },
+    items: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          product_name: { type: "string" },
+          description: { type: ["string", "null"] },
+          quantity: { type: "number" },
+          unit: { type: "string" },
+          unit_price_before_iva: { type: "number" },
+          total_before_iva: { type: "number" },
+        },
+        required: ["product_name", "description", "quantity", "unit", "unit_price_before_iva", "total_before_iva"],
+        additionalProperties: false,
+      },
     },
-  }))
+  },
+  required: ["supplier_name", "quote_reference", "quote_date", "expiry_date", "subtotal_before_iva", "iva_amount", "total_with_iva", "iva_included", "items"],
+  additionalProperties: false,
+}
 
-  const response = await openai.chat.completions.create({
+/** Flujo web: PDF nativo via Responses API + JSON Schema estricto */
+export async function parseQuotePDF(pdfBase64: string): Promise<ParsedQuoteDocument> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const response = await (openai as any).responses.create({
     model: "gpt-5.4",
-    max_tokens: 4096,
-    response_format: { type: "json_object" },
-    messages: [
+    input: [
       {
         role: "user",
-        content: [...imageContent, { type: "text", text: PARSE_PROMPT }],
+        content: [
+          { type: "input_text", text: PARSE_PROMPT },
+          {
+            type: "input_file",
+            filename: "cotizacion.pdf",
+            file_data: `data:application/pdf;base64,${pdfBase64}`,
+          },
+        ],
       },
     ],
+    text: {
+      format: {
+        type: "json_schema",
+        name: "quote_extraction",
+        strict: true,
+        schema: QUOTE_SCHEMA,
+      },
+    },
   })
 
-  return JSON.parse(response.choices[0]?.message?.content ?? "") as ParsedQuoteDocument
+  const text: string = response.output_text
+  return JSON.parse(text) as ParsedQuoteDocument
 }
 
-/** Fallback para Telegram: extrae texto del PDF y lo analiza con gpt-4o-mini */
-export async function parseQuotePDF(pdfBase64: string): Promise<ParsedQuoteDocument> {
-  const buffer = Buffer.from(pdfBase64, "base64")
-  const text = await extractPdfText(buffer)
-  return parseQuoteText(text)
-}
-
+/** Fallback para Telegram: texto plano + JSON Schema estricto */
 export async function parseQuoteText(text: string): Promise<ParsedQuoteDocument> {
   const response = await openai.chat.completions.create({
     model: "gpt-4o-mini",
-    max_tokens: 4096,
-    response_format: { type: "json_object" },
-    messages: [
-      {
-        role: "user",
-        content: `${PARSE_PROMPT}\n\nDocumento a analizar:\n${text}`,
+    response_format: {
+      type: "json_schema",
+      json_schema: {
+        name: "quote_extraction",
+        strict: true,
+        schema: QUOTE_SCHEMA,
       },
-    ],
+    } as never,
+    messages: [{ role: "user", content: `${PARSE_PROMPT}\n\nDocumento:\n${text}` }],
   })
 
   return JSON.parse(response.choices[0]?.message?.content ?? "") as ParsedQuoteDocument
