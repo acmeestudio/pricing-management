@@ -55,7 +55,9 @@ export default function MaterialsPage() {
         if (search) params.set("search", search)
         if (categoryFilter !== "all") params.set("category_id", categoryFilter)
         const res = await fetch(`/api/materials?${params}`)
-        setMaterials(await res.json())
+        const data = await res.json()
+        setMaterials(Array.isArray(data) ? data : [])
+        if (!res.ok) console.error("Materials API error:", data)
       } finally {
         setLoading(false)
       }

@@ -30,6 +30,7 @@ interface ParsedItem {
 
 interface ParsedQuote {
   supplier_name: string | null
+  supplier_nit: string | null
   quote_reference: string | null
   quote_date: string | null
   expiry_date: string | null
@@ -152,12 +153,31 @@ export default function NewSupplierQuotePage() {
 
     setSaving(true)
     try {
+      // 0. Auto-crear proveedor si no se seleccionó uno pero el PDF lo detectó
+      let supplierId = selectedSupplierId || null
+      if (!supplierId && parsed?.supplier_name) {
+        const suppRes = await fetch("/api/suppliers", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: parsed.supplier_name,
+            notes: parsed.supplier_nit ? `NIT: ${parsed.supplier_nit}` : null,
+          }),
+        })
+        if (suppRes.ok) {
+          const newSupplier = await suppRes.json()
+          supplierId = newSupplier.id
+          setSelectedSupplierId(newSupplier.id)
+          setSuppliers(prev => [...prev, newSupplier])
+        }
+      }
+
       // 1. Crear la cotización padre
       const quoteRes = await fetch("/api/quotes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          supplier_id: selectedSupplierId || null,
+          supplier_id: supplierId,
           quote_reference: parsed?.quote_reference || null,
           quote_date: quoteDate,
           expiry_date: parsed?.expiry_date || null,
@@ -177,7 +197,7 @@ export default function NewSupplierQuotePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(selectedItems.map(item => ({
           supplier_quote_id: quote.id,
-          supplier_id: selectedSupplierId || null,
+          supplier_id: supplierId,
           category_id: item.category_id || null,
           product_name: item.product_name,
           description: item.description,

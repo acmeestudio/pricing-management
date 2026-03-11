@@ -31,7 +31,9 @@ PASO 3 — EXTRAE CADA ÍTEM:
 - total_before_iva: quantity × unit_price_before_iva
 
 Datos generales:
-- supplier_name, quote_reference, quote_date (YYYY-MM-DD o null), expiry_date (YYYY-MM-DD o null)
+- supplier_name: nombre completo de la empresa proveedora (razón social, ej: "FRENCHER SERVICIOS INDUSTRIALES S.A.S")
+- supplier_nit: NIT o RUT de la empresa proveedora (ej: "900123456-7"). Solo el número, sin la palabra "NIT" ni "RUT".
+- quote_reference, quote_date (YYYY-MM-DD o null), expiry_date (YYYY-MM-DD o null)
 - subtotal_before_iva, iva_amount, total_with_iva (números en COP)
 - iva_included: "yes" / "no" / "unknown"
 
@@ -42,6 +44,7 @@ const QUOTE_SCHEMA = {
   type: "object",
   properties: {
     supplier_name: { type: ["string", "null"] },
+    supplier_nit: { type: ["string", "null"] },
     quote_reference: { type: ["string", "null"] },
     quote_date: { type: ["string", "null"] },
     expiry_date: { type: ["string", "null"] },
@@ -66,7 +69,7 @@ const QUOTE_SCHEMA = {
       },
     },
   },
-  required: ["supplier_name", "quote_reference", "quote_date", "expiry_date", "subtotal_before_iva", "iva_amount", "total_with_iva", "iva_included", "items"],
+  required: ["supplier_name", "supplier_nit", "quote_reference", "quote_date", "expiry_date", "subtotal_before_iva", "iva_amount", "total_with_iva", "iva_included", "items"],
   additionalProperties: false,
 }
 
