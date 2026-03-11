@@ -43,7 +43,24 @@ export async function DELETE(_request: Request, { params }: { params: { id: stri
     .eq("id", params.id)
     .single()
 
-  // Delete items first (correct column: supplier_quote_id)
+  // Get item IDs first (needed to delete product_recipes)
+  const { data: items } = await supabase
+    .from("supplier_quote_items")
+    .select("id")
+    .eq("supplier_quote_id", params.id)
+
+  const itemIds = (items || []).map((i) => i.id)
+
+  // Delete product_recipes referencing these items
+  if (itemIds.length > 0) {
+    const { error: recipesError } = await supabase
+      .from("product_recipes")
+      .delete()
+      .in("supplier_quote_item_id", itemIds)
+    if (recipesError) return NextResponse.json({ error: recipesError.message }, { status: 500 })
+  }
+
+  // Delete items
   const { error: itemsError } = await supabase
     .from("supplier_quote_items")
     .delete()
