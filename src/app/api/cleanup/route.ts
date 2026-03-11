@@ -43,6 +43,28 @@ export async function POST(request: Request) {
     deletedQuotes = deletedQuotesData?.length || 0
   }
 
+  // 3. Delete orphan items (supplier_quote_id references a quote that no longer exists)
+  const { data: allItems } = await supabase
+    .from("supplier_quote_items")
+    .select("id, supplier_quote_id")
+  const { data: validQuotes } = await supabase
+    .from("supplier_quotes")
+    .select("id")
+  const validQuoteIds = new Set((validQuotes || []).map((q) => q.id))
+  const orphanItemIds = (allItems || [])
+    .filter((i) => !i.supplier_quote_id || !validQuoteIds.has(i.supplier_quote_id))
+    .map((i) => i.id)
+
+  if (orphanItemIds.length > 0) {
+    const { data: deletedOrphans, error: orphanError } = await supabase
+      .from("supplier_quote_items")
+      .delete()
+      .in("id", orphanItemIds)
+      .select("id")
+    if (orphanError) return NextResponse.json({ error: orphanError.message }, { status: 500 })
+    deletedItems += deletedOrphans?.length || 0
+  }
+
   // 3. Delete orphan suppliers (no remaining quotes)
   const { data: allSuppliers } = await supabase.from("suppliers").select("id")
   const { data: quotesWithSuppliers } = await supabase
