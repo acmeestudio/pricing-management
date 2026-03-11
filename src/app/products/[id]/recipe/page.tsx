@@ -1,25 +1,19 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { useParams, useRouter } from "next/navigation"
+import { useParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Badge } from "@/components/ui/badge"
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table"
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select"
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
 import { calculatePricing, formatCOP, formatPercent, getPriorityBadge } from "@/lib/pricing"
-import { ArrowLeft, Plus, Trash2, RefreshCw, Search } from "lucide-react"
+import { ArrowLeft, Plus, Trash2, RefreshCw } from "lucide-react"
+import { MaterialPickerDialog } from "@/components/MaterialPickerDialog"
 
 interface RecipeItem {
   id: string
@@ -54,78 +48,35 @@ interface Product {
   profit_per_unit: number | null
 }
 
-interface QuoteItemOption {
-  id: string
-  product_name: string
-  unit_price_before_iva: number
-  unit: string
-  priority: number | null
-  supplier: { name: string } | null
-}
-
-interface Category {
-  id: string
-  name: string
-}
-
-interface NewItemForm {
-  material_name: string
-  quantity_needed: number
-  unit: string
-  unit_cost: number
-  category_id: string
-  supplier_quote_item_id: string
-  notes: string
-}
-
-const emptyForm: NewItemForm = {
-  material_name: "",
-  quantity_needed: 1,
-  unit: "unidad",
-  unit_cost: 0,
-  category_id: "",
-  supplier_quote_item_id: "",
-  notes: "",
-}
 
 export default function RecipePage() {
   const params = useParams()
-  const router = useRouter()
   const { toast } = useToast()
 
   const [product, setProduct] = useState<Product | null>(null)
   const [recipe, setRecipe] = useState<RecipeItem[]>([])
-  const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
   const [addDialogOpen, setAddDialogOpen] = useState(false)
-  const [form, setForm] = useState<NewItemForm>(emptyForm)
-  const [saving, setSaving] = useState(false)
   const [recalculating, setRecalculating] = useState(false)
-  const [materialSearch, setMaterialSearch] = useState("")
-  const [materialOptions, setMaterialOptions] = useState<QuoteItemOption[]>([])
-  const [showOptions, setShowOptions] = useState(false)
   const [productMargin, setProductMargin] = useState(45)
   const [productAdditional, setProductAdditional] = useState(0)
   const [productIva, setProductIva] = useState(19)
 
   const loadData = useCallback(async () => {
     try {
-      const [productRes, recipeRes, catRes] = await Promise.all([
+      const [productRes, recipeRes] = await Promise.all([
         fetch(`/api/products/${params.id}`),
         fetch(`/api/recipes?product_id=${params.id}`),
-        fetch("/api/categories"),
       ])
-      const [productData, recipeData, catData] = await Promise.all([
+      const [productData, recipeData] = await Promise.all([
         productRes.json(),
         recipeRes.json(),
-        catRes.json(),
       ])
       setProduct(productData)
       setProductMargin(productData.margin_percentage)
       setProductAdditional(productData.additional_costs || 0)
       setProductIva(productData.iva_percentage)
       setRecipe(recipeData)
-      setCategories(catData)
     } finally {
       setLoading(false)
     }
@@ -133,67 +84,40 @@ export default function RecipePage() {
 
   useEffect(() => { loadData() }, [loadData])
 
-  // Buscar materiales de cotizaciones existentes
-  useEffect(() => {
-    if (materialSearch.length < 2) {
-      setMaterialOptions([])
-      setShowOptions(false)
-      return
+  interface SelectedMaterial {
+    material: {
+      id: string
+      product_name: string
+      unit_price_before_iva: number
+      unit: string
+      priority: number | null
+      supplier: { id: string; name: string } | null
+      category: { id: string; name: string } | null
     }
-    const load = async () => {
-      const res = await fetch(`/api/materials?search=${encodeURIComponent(materialSearch)}`)
-      const data = await res.json()
-      setMaterialOptions(data.slice(0, 8))
-      setShowOptions(data.length > 0)
-    }
-    const t = setTimeout(load, 300)
-    return () => clearTimeout(t)
-  }, [materialSearch])
-
-  const selectMaterialOption = (opt: QuoteItemOption) => {
-    setForm(f => ({
-      ...f,
-      material_name: opt.product_name,
-      unit: opt.unit,
-      unit_cost: opt.unit_price_before_iva,
-      supplier_quote_item_id: opt.id,
-    }))
-    setMaterialSearch(opt.product_name)
-    setShowOptions(false)
+    quantity: number
   }
 
-  const handleAddItem = async () => {
-    if (!form.material_name.trim()) {
-      toast({ title: "Error", description: "El nombre del material es requerido", variant: "destructive" })
-      return
-    }
-    setSaving(true)
-    try {
-      const res = await fetch("/api/recipes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sellable_product_id: params.id,
-          supplier_quote_item_id: form.supplier_quote_item_id || null,
-          material_name: form.material_name,
-          material_category_id: form.category_id || null,
-          quantity_needed: form.quantity_needed,
-          unit: form.unit,
-          unit_cost: form.unit_cost || null,
-          notes: form.notes || null,
-        }),
-      })
-      if (!res.ok) throw new Error()
-      toast({ title: "Material agregado a la receta" })
-      setAddDialogOpen(false)
-      setForm(emptyForm)
-      setMaterialSearch("")
-      loadData()
-    } catch {
-      toast({ title: "Error", description: "No se pudo agregar", variant: "destructive" })
-    } finally {
-      setSaving(false)
-    }
+  const handleAddItems = async (items: SelectedMaterial[]) => {
+    await Promise.all(
+      items.map((item) =>
+        fetch("/api/recipes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sellable_product_id: params.id,
+            supplier_quote_item_id: item.material.id.startsWith("manual-") ? null : item.material.id,
+            material_name: item.material.product_name,
+            material_category_id: item.material.category?.id || null,
+            quantity_needed: item.quantity,
+            unit: item.material.unit,
+            unit_cost: item.material.unit_price_before_iva || null,
+            notes: null,
+          }),
+        })
+      )
+    )
+    toast({ title: `${items.length} material${items.length > 1 ? "es" : ""} agregado${items.length > 1 ? "s" : ""} a la receta` })
+    loadData()
   }
 
   const handleDeleteItem = async (id: string) => {
@@ -432,115 +356,11 @@ export default function RecipePage() {
         </div>
       </div>
 
-      {/* Dialog agregar material */}
-      <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Agregar Material a la Receta</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            {/* Buscar en cotizaciones existentes */}
-            <div className="space-y-2">
-              <Label>Buscar en cotizaciones existentes</Label>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Buscar material cotizado..."
-                  value={materialSearch}
-                  onChange={(e) => setMaterialSearch(e.target.value)}
-                  className="pl-9"
-                />
-                {showOptions && materialOptions.length > 0 && (
-                  <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-background border rounded-md shadow-lg max-h-48 overflow-auto">
-                    {materialOptions.map((opt) => {
-                      const pBadge = getPriorityBadge(opt.priority)
-                      return (
-                        <button
-                          key={opt.id}
-                          className="w-full px-3 py-2 text-left text-sm hover:bg-muted flex items-center justify-between"
-                          onClick={() => selectMaterialOption(opt)}
-                        >
-                          <span>{opt.product_name}</span>
-                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                            <span>{pBadge.emoji}</span>
-                            <span>{opt.supplier?.name}</span>
-                            <span className="font-semibold">{formatCOP(opt.unit_price_before_iva)}/{opt.unit}</span>
-                          </div>
-                        </button>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-              <p className="text-xs text-muted-foreground">O ingresa los datos manualmente abajo</p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2 space-y-1">
-                <Label>Nombre del material *</Label>
-                <Input
-                  placeholder="Ej: Madera Roble 1"
-                  value={form.material_name}
-                  onChange={(e) => setForm(f => ({ ...f, material_name: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label>Categoría</Label>
-                <Select value={form.category_id} onValueChange={(v) => setForm(f => ({ ...f, category_id: v }))}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Categoría..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categories.map(c => (
-                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label>Unidad</Label>
-                <Input
-                  placeholder="unidad, metro, m2, kg..."
-                  value={form.unit}
-                  onChange={(e) => setForm(f => ({ ...f, unit: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label>Cantidad necesaria</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={form.quantity_needed}
-                  onChange={(e) => setForm(f => ({ ...f, quantity_needed: parseFloat(e.target.value) || 0 }))}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label>Costo unitario (sin IVA)</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  value={form.unit_cost}
-                  onChange={(e) => setForm(f => ({ ...f, unit_cost: parseFloat(e.target.value) || 0 }))}
-                />
-              </div>
-            </div>
-
-            {form.quantity_needed > 0 && form.unit_cost > 0 && (
-              <div className="rounded-md bg-muted p-3 text-sm flex justify-between">
-                <span className="text-muted-foreground">Costo de esta línea:</span>
-                <span className="font-semibold">{formatCOP(form.quantity_needed * form.unit_cost)}</span>
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAddDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={handleAddItem} disabled={saving}>
-              {saving ? "Agregando..." : "Agregar a receta"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <MaterialPickerDialog
+        open={addDialogOpen}
+        onOpenChange={setAddDialogOpen}
+        onAddItems={handleAddItems}
+      />
     </div>
   )
 }

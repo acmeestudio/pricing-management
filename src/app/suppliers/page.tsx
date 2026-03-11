@@ -12,7 +12,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
-import { Plus, Pencil, Trash2, Users } from "lucide-react"
+import { Plus, Pencil, Users } from "lucide-react"
 import type { Supplier } from "@/lib/supabase/types"
 
 interface SupplierForm {
@@ -95,17 +95,6 @@ export default function SuppliersPage() {
     }
   }
 
-  const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`¿Eliminar el proveedor "${name}"?`)) return
-    try {
-      await fetch(`/api/suppliers/${id}`, { method: "DELETE" })
-      toast({ title: "Proveedor eliminado" })
-      load()
-    } catch {
-      toast({ title: "Error", description: "No se pudo eliminar", variant: "destructive" })
-    }
-  }
-
   const updateField = (field: keyof SupplierForm, value: string) =>
     setForm((f) => ({ ...f, [field]: value }))
 
@@ -160,14 +149,6 @@ export default function SuppliersPage() {
                       <div className="flex items-center justify-end gap-2">
                         <Button variant="ghost" size="icon" onClick={() => openEdit(s)}>
                           <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="text-destructive hover:text-destructive"
-                          onClick={() => handleDelete(s.id, s.name)}
-                        >
-                          <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
                     </TableCell>
