@@ -9,6 +9,9 @@ const inter = Inter({ subsets: ["latin"] })
 export const metadata: Metadata = {
   title: "Acme Estudio — Cotizaciones",
   description: "Sistema de gestión de cotizaciones para Acme Estudio",
+  icons: {
+    icon: "/icon.svg",
+  },
 }
 
 export default function RootLayout({
