@@ -37,7 +37,7 @@ export async function GET(request: Request) {
     .order("quote_date", { ascending: false })
 
   if (statusFilter && statusFilter !== "all") {
-    query = query.eq("status", statusFilter)
+    query = query.eq("status", statusFilter as "accepted" | "paid")
   }
 
   const { data: quotes, error } = await query

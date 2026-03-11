@@ -25,7 +25,5 @@ export async function GET(request: Request) {
 
   const { data, error } = await query
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  // Temporary: prepend debug info
-  const debug = { _debug: { supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL, count: data?.length } }
-  return NextResponse.json({ ...debug, items: data })
+  return NextResponse.json(data)
 }
