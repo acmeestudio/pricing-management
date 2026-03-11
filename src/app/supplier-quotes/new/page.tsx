@@ -73,6 +73,9 @@ export default function NewSupplierQuotePage() {
   const [saving, setSaving] = useState(false)
   const [ivaRate, setIvaRate] = useState(19)
   const [showIvaColumns, setShowIvaColumns] = useState(false)
+  const [supplierForm, setSupplierForm] = useState({
+    name: "", nit: "", email: "", phone: "", city: "", contact: "",
+  })
 
   // Cargar proveedores y categorías al montar
   useEffect(() => {
@@ -127,6 +130,14 @@ export default function NewSupplierQuotePage() {
       setItems((data.items || []).map(item => ({ ...item, selected: true })))
       if (data.quote_date) setQuoteDate(data.quote_date)
       setShowIvaColumns(data.iva_included !== "yes")
+      setSupplierForm({
+        name: data.supplier_name || "",
+        nit: data.supplier_nit || "",
+        email: data.supplier_email || "",
+        phone: data.supplier_phone || "",
+        city: data.supplier_city || "",
+        contact: data.supplier_contact || "",
+      })
       setStep("review")
     } catch {
       toast({ title: "Error", description: "No se pudo analizar el PDF", variant: "destructive" })
@@ -157,19 +168,19 @@ export default function NewSupplierQuotePage() {
 
     setSaving(true)
     try {
-      // 0. Auto-crear proveedor si no se seleccionó uno pero el PDF lo detectó
+      // 0. Auto-crear proveedor si no se seleccionó uno pero el form tiene nombre
       let supplierId = selectedSupplierId || null
-      if (!supplierId && parsed?.supplier_name) {
+      if (!supplierId && supplierForm.name.trim()) {
         const suppRes = await fetch("/api/suppliers", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            name: parsed.supplier_name,
-            contact_name: parsed.supplier_contact || null,
-            phone: parsed.supplier_phone || null,
-            email: parsed.supplier_email || null,
-            city: parsed.supplier_city || null,
-            notes: parsed.supplier_nit ? `NIT: ${parsed.supplier_nit}` : null,
+            name: supplierForm.name.trim(),
+            contact_name: supplierForm.contact || null,
+            phone: supplierForm.phone || null,
+            email: supplierForm.email || null,
+            city: supplierForm.city || null,
+            notes: supplierForm.nit ? `NIT: ${supplierForm.nit}` : null,
           }),
         })
         if (suppRes.ok) {
@@ -372,6 +383,45 @@ export default function NewSupplierQuotePage() {
           </Button>
         </div>
       </div>
+
+      {/* Datos del proveedor detectados */}
+      {!selectedSupplierId && (
+        <Card className="mb-6 border-blue-200 bg-blue-50/50">
+          <CardHeader className="pb-3 pt-4 px-6">
+            <CardTitle className="text-sm font-medium text-blue-800">
+              Datos del Proveedor detectados — revisa y corrige si es necesario
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-6 pb-4">
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Razón social *</Label>
+                <Input value={supplierForm.name} onChange={e => setSupplierForm(f => ({ ...f, name: e.target.value }))} placeholder="Nombre del proveedor" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">NIT</Label>
+                <Input value={supplierForm.nit} onChange={e => setSupplierForm(f => ({ ...f, nit: e.target.value }))} placeholder="900123456-7" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Contacto</Label>
+                <Input value={supplierForm.contact} onChange={e => setSupplierForm(f => ({ ...f, contact: e.target.value }))} placeholder="Nombre del contacto" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Email</Label>
+                <Input value={supplierForm.email} onChange={e => setSupplierForm(f => ({ ...f, email: e.target.value }))} placeholder="correo@proveedor.com" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Teléfono</Label>
+                <Input value={supplierForm.phone} onChange={e => setSupplierForm(f => ({ ...f, phone: e.target.value }))} placeholder="300 123 4567" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Ciudad</Label>
+                <Input value={supplierForm.city} onChange={e => setSupplierForm(f => ({ ...f, city: e.target.value }))} placeholder="Bogotá" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Info de la cotización */}
       <div className="grid grid-cols-4 gap-4 mb-6">
