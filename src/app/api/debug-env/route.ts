@@ -7,18 +7,27 @@ export async function GET() {
   const keyPrefix = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").slice(0, 20) + "..."
 
   const supabase = createServiceClient()
-
-  // Simple query
-  const { data: simple, error: e1, count } = await supabase
+  const { data, error, count } = await supabase
     .from("supplier_quote_items")
-    .select("id, product_name, supplier_quote_id", { count: "exact" })
-    .limit(5)
+    .select("id, product_name", { count: "exact" })
+    .limit(10)
 
-  // Full query like materials route
-  const { data: full, error: e2 } = await supabase
-    .from("supplier_quote_items")
-    .select(`*, supplier:suppliers(id, name), category:categories(id, name), quote:supplier_quotes(quote_date, expiry_date)`)
-    .limit(5)
+  return NextResponse.json({ url, keyPrefix, count, items: data, error: error?.message })
+}
 
-  return NextResponse.json({ url, keyPrefix, count, simpleItems: simple, fullItems: full, e1: e1?.message, e2: e2?.message })
+// POST: delete ALL data (product_recipes → items → quotes → suppliers)
+export async function POST() {
+  const supabase = createServiceClient()
+
+  const r1 = await supabase.from("product_recipes").delete().neq("id", "00000000-0000-0000-0000-000000000000")
+  const r2 = await supabase.from("supplier_quote_items").delete().neq("id", "00000000-0000-0000-0000-000000000000")
+  const r3 = await supabase.from("supplier_quotes").delete().neq("id", "00000000-0000-0000-0000-000000000000")
+  const r4 = await supabase.from("suppliers").delete().neq("id", "00000000-0000-0000-0000-000000000000")
+
+  return NextResponse.json({
+    recipes: r1.error?.message ?? "ok",
+    items: r2.error?.message ?? "ok",
+    quotes: r3.error?.message ?? "ok",
+    suppliers: r4.error?.message ?? "ok",
+  })
 }
