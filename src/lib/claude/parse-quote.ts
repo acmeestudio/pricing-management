@@ -6,34 +6,36 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 })
 
-const PARSE_PROMPT = `Eres un asistente que extrae datos de cotizaciones de proveedores de materiales de interiorismo y mobiliario en Colombia.
+const PARSE_PROMPT = `Eres un experto en extracción de datos de cotizaciones de proveedores de materiales de interiorismo y mobiliario en Colombia.
 
-REGLAS CRÍTICAS PARA LEER LA TABLA:
-1. Cada ítem tiene exactamente una fila con números (cantidad, precio unitario, total). Esos tres valores siempre van juntos en la misma fila horizontal.
-2. Una descripción de producto puede ocupar VARIAS LÍNEAS de texto consecutivas pero sigue siendo UN SOLO ítem. No crees ítems separados por líneas de texto que no tienen números asociados.
-3. Solo crea un ítem nuevo cuando haya un nuevo conjunto de números (cantidad + precio + total) en la tabla.
-4. Lee de izquierda a derecha: descripción → cantidad → precio unitario → total. Nunca uses los números de una fila con la descripción de otra.
+PASO 1 — ANALIZA LA ESTRUCTURA DE LA TABLA:
+Antes de extraer datos, identifica qué columna representa cada concepto:
+- CANTIDAD DEL PEDIDO: columna que indica cuántas unidades del producto se están cotizando (ej: "Cantidad", "Und", "Cant."). NO la confundas con columnas de especificaciones como "cantidad de tela", "metros de material", "medida".
+- PRECIO UNITARIO: precio por una unidad del producto (ej: "Precio unitario", "V/r. x Unidad", "Valor unit.").
+- TOTAL DE LA FILA: precio unitario × cantidad del pedido (ej: "Total", "V/R. Total", "Subtotal fila").
 
-Para cada ítem:
-- product_name: nombre completo del producto (todas las líneas de descripción que pertenecen a ese ítem)
-- description: especificaciones adicionales (medida, acabado, color, referencia), puede ser null
-- quantity: cantidad numérica
-- unit: unidad de medida (unidad, metro, m2, kg, rollo, lámina, etc.)
-- unit_price_before_iva: precio unitario SIN IVA en COP (número)
-- total_before_iva: total de esa fila = quantity × unit_price_before_iva
+PASO 2 — DETECTA EL TRATAMIENTO DEL IVA:
+- Si el documento dice "PRECIO INCLUYE IVA", "IVA incluido" o similar → precios YA incluyen IVA. Divide por 1.19 para obtener precio sin IVA.
+- Si el IVA aparece como línea separada al final del documento → precios son SIN IVA.
+- Si no es claro → usa "unknown".
 
-Datos generales del documento:
-- supplier_name: nombre del proveedor (string o null)
-- quote_reference: número de cotización (string o null)
-- quote_date: fecha en formato YYYY-MM-DD (string o null)
-- expiry_date: fecha de vigencia YYYY-MM-DD (string o null)
-- subtotal_before_iva: subtotal sin IVA (number o null)
-- iva_amount: monto del IVA (number o null)
-- total_with_iva: total con IVA (number o null)
-- iva_included: "yes" si precios incluyen IVA, "no" si no incluyen, "unknown" si no es claro
+PASO 3 — EXTRAE CADA ÍTEM:
+- Una descripción puede ocupar múltiples líneas pero es UN SOLO ítem.
+- Solo crea un ítem nuevo cuando haya un nuevo conjunto de (cantidad del pedido + precio unitario + total).
+- Ignora columnas de especificaciones (imágenes, número de artículo, medidas de materiales, telas).
+- product_name: nombre completo del producto (todas las líneas de descripción del ítem)
+- description: especificaciones clave (medidas del mueble, materiales, acabados)
+- quantity: CANTIDAD DEL PEDIDO — número de unidades a comprar
+- unit: unidad (unidad, metro, m2, kg, rollo, lámina, etc.)
+- unit_price_before_iva: precio unitario SIN IVA en COP
+- total_before_iva: quantity × unit_price_before_iva
 
-Si los precios incluyen IVA 19%, divide entre 1.19 para obtener el valor sin IVA.
-Todos los valores monetarios son números sin puntos ni comas de formato.`
+Datos generales:
+- supplier_name, quote_reference, quote_date (YYYY-MM-DD o null), expiry_date (YYYY-MM-DD o null)
+- subtotal_before_iva, iva_amount, total_with_iva (números en COP)
+- iva_included: "yes" / "no" / "unknown"
+
+Todos los valores monetarios son números puros sin puntos ni comas de formato.`
 
 // JSON Schema estricto — garantiza estructura exacta sin campos inventados
 const QUOTE_SCHEMA = {
