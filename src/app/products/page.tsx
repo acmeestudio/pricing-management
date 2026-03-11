@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { formatCOP, formatPercent } from "@/lib/pricing"
-import { Plus, Package, Search, TrendingUp } from "lucide-react"
+import { Plus, Package, Search, TrendingUp, Trash2 } from "lucide-react"
 
 interface Product {
   id: string
@@ -43,6 +43,19 @@ export default function ProductsPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
   const [categoryFilter, setCategoryFilter] = useState("all")
+  const [deleting, setDeleting] = useState<string | null>(null)
+
+  async function handleDelete(id: string, name: string) {
+    if (!confirm(`¿Eliminar el producto "${name}"? Esta acción no se puede deshacer.`)) return
+    setDeleting(id)
+    try {
+      const res = await fetch(`/api/products/${id}`, { method: "DELETE" })
+      if (res.ok) setProducts(prev => prev.filter(p => p.id !== id))
+      else alert("Error al eliminar el producto.")
+    } finally {
+      setDeleting(null)
+    }
+  }
 
   useEffect(() => {
     fetch("/api/categories").then(r => r.json()).then(setCategories)
@@ -198,6 +211,15 @@ export default function ProductsPage() {
                           <Link href={`/products/${p.id}/recipe`}>
                             <TrendingUp className="h-3 w-3" />
                           </Link>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                          disabled={deleting === p.id}
+                          onClick={() => handleDelete(p.id, p.name)}
+                        >
+                          <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
                     </TableCell>
