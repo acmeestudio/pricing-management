@@ -87,5 +87,10 @@ export async function POST(request: Request) {
     deletedSuppliers = deletedSuppliersData?.length || 0
   }
 
-  return NextResponse.json({ deletedItems, deletedQuotes, deletedSuppliers })
+  return NextResponse.json({
+    deletedItems,
+    deletedQuotes,
+    deletedSuppliers,
+    debug: { orphanItemIds: orphanItemIds.length, totalItems: allItems?.length, validQuotes: validQuotes?.length }
+  })
 }
