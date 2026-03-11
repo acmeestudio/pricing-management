@@ -8,7 +8,7 @@ export async function GET(request: Request) {
   const search = searchParams.get("search")
   const categoryId = searchParams.get("category_id")
 
-  // Vista consolidada: todos los ítems aprobados agrupados por nombre de producto
+  // Vista consolidada: todos los ítems de cotizaciones de proveedores
   let query = supabase
     .from("supplier_quote_items")
     .select(`
@@ -17,7 +17,6 @@ export async function GET(request: Request) {
       category:categories(id, name),
       quote:supplier_quotes(quote_date, expiry_date)
     `)
-    .eq("is_approved", true)
     .order("product_name")
     .order("priority")
 

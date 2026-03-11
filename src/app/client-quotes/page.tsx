@@ -9,7 +9,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table"
 import { formatCOP } from "@/lib/pricing"
-import { Plus, ShoppingCart } from "lucide-react"
+import { Plus, ShoppingCart, Trash2 } from "lucide-react"
 
 interface ClientQuote {
   id: string
@@ -32,10 +32,23 @@ const statusVariants: Record<string, "outline" | "default" | "success" | "destru
 export default function ClientQuotesPage() {
   const [quotes, setQuotes] = useState<ClientQuote[]>([])
   const [loading, setLoading] = useState(true)
+  const [deleting, setDeleting] = useState<string | null>(null)
 
   useEffect(() => {
     fetch("/api/client-quotes").then(r => r.json()).then(setQuotes).finally(() => setLoading(false))
   }, [])
+
+  async function handleDelete(id: string, quoteNumber: string) {
+    if (!confirm(`¿Eliminar la cotización ${quoteNumber}? Esta acción no se puede deshacer.`)) return
+    setDeleting(id)
+    try {
+      const res = await fetch(`/api/client-quotes/${id}`, { method: "DELETE" })
+      if (res.ok) setQuotes(prev => prev.filter(q => q.id !== id))
+      else alert("Error al eliminar la cotización.")
+    } finally {
+      setDeleting(null)
+    }
+  }
 
   return (
     <div className="p-8">
@@ -95,9 +108,18 @@ export default function ClientQuotesPage() {
                         {statusLabels[q.status] || q.status}
                       </Badge>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="flex items-center gap-1">
                       <Button variant="ghost" size="sm" asChild>
                         <Link href={`/client-quotes/${q.id}`}>Ver</Link>
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                        disabled={deleting === q.id}
+                        onClick={() => handleDelete(q.id, q.quote_number)}
+                      >
+                        <Trash2 className="h-4 w-4" />
                       </Button>
                     </TableCell>
                   </TableRow>

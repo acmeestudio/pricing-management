@@ -11,7 +11,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
-import { Plus, FileText, Loader2 } from "lucide-react"
+import { Plus, FileText, Loader2, Trash2 } from "lucide-react"
 import { formatCOP } from "@/lib/pricing"
 
 interface SupplierQuote {
@@ -43,6 +43,7 @@ export default function SupplierQuotesPage() {
   const [quotes, setQuotes] = useState<SupplierQuote[]>([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState<string>("all")
+  const [deleting, setDeleting] = useState<string | null>(null)
 
   useEffect(() => {
     const load = async () => {
@@ -57,6 +58,18 @@ export default function SupplierQuotesPage() {
     }
     load()
   }, [statusFilter])
+
+  async function handleDelete(id: string, ref: string) {
+    if (!confirm(`¿Eliminar la cotización ${ref}? Esta acción no se puede deshacer.`)) return
+    setDeleting(id)
+    try {
+      const res = await fetch(`/api/quotes/${id}`, { method: "DELETE" })
+      if (res.ok) setQuotes(prev => prev.filter(q => q.id !== id))
+      else alert("Error al eliminar la cotización.")
+    } finally {
+      setDeleting(null)
+    }
+  }
 
   return (
     <div className="p-8">
@@ -147,9 +160,18 @@ export default function SupplierQuotesPage() {
                     <TableCell className="text-right font-medium">
                       {q.total_with_iva ? formatCOP(q.total_with_iva) : "—"}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="flex items-center gap-1">
                       <Button variant="ghost" size="sm" asChild>
                         <Link href={`/supplier-quotes/${q.id}`}>Ver</Link>
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                        disabled={deleting === q.id}
+                        onClick={() => handleDelete(q.id, q.quote_reference || `COT-${q.id.slice(0, 8)}`)}
+                      >
+                        <Trash2 className="h-4 w-4" />
                       </Button>
                     </TableCell>
                   </TableRow>
