@@ -4,7 +4,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
   LayoutDashboard, FileText, Users, Package, ShoppingCart,
-  Tag, Boxes, BarChart3, Plus,
+  Tag, Boxes, BarChart3, Plus, TrendingUp,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -15,6 +15,7 @@ const navItems = [
   { href: "/materials", label: "Materiales", icon: Boxes },
   { href: "/products", label: "Productos", icon: Package },
   { href: "/client-quotes", label: "Cotizaciones Clientes", icon: ShoppingCart },
+  { href: "/ventas", label: "Ventas", icon: TrendingUp },
   { href: "/categories", label: "Categorías", icon: Tag },
 ]
 
@@ -62,7 +63,7 @@ export function Sidebar() {
       {/* Quick action */}
       <div className="px-3 py-4 border-t border-sidebar-border">
         <Link
-          href="/supplier-quotes/new"
+          href="/client-quotes/new"
           className="flex items-center gap-2 px-3 py-2.5 rounded-md text-sm font-medium bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary/90 transition-colors"
         >
           <Plus className="h-4 w-4" />

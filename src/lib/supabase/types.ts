@@ -328,8 +328,10 @@ export interface Database {
           iva_amount: number | null
           total_with_iva: number | null
           pdf_storage_path: string | null
-          status: 'draft' | 'sent' | 'accepted' | 'rejected'
+          status: 'draft' | 'sent' | 'accepted' | 'rejected' | 'paid'
           notes: string | null
+          accepted_at: string | null
+          paid_at: string | null
           created_at: string
           updated_at: string
         }
@@ -346,8 +348,10 @@ export interface Database {
           iva_amount?: number | null
           total_with_iva?: number | null
           pdf_storage_path?: string | null
-          status?: 'draft' | 'sent' | 'accepted' | 'rejected'
+          status?: 'draft' | 'sent' | 'accepted' | 'rejected' | 'paid'
           notes?: string | null
+          accepted_at?: string | null
+          paid_at?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -363,8 +367,10 @@ export interface Database {
           iva_amount?: number | null
           total_with_iva?: number | null
           pdf_storage_path?: string | null
-          status?: 'draft' | 'sent' | 'accepted' | 'rejected'
+          status?: 'draft' | 'sent' | 'accepted' | 'rejected' | 'paid'
           notes?: string | null
+          accepted_at?: string | null
+          paid_at?: string | null
           updated_at?: string
         }
         Relationships: []

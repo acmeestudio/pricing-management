@@ -13,8 +13,9 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog"
+import { useToast } from "@/hooks/use-toast"
 import { formatCOP } from "@/lib/pricing"
-import { ArrowLeft, Building2, Pencil, Printer } from "lucide-react"
+import { ArrowLeft, Building2, Printer, CheckCircle, XCircle, DollarSign } from "lucide-react"
 
 interface QuoteItem {
   id: string
@@ -35,11 +36,13 @@ interface ClientQuote {
   quote_date: string
   validity_days: number
   iva_percentage: number
-  subtotal: number | null
+  subtotal_before_iva: number | null
   iva_amount: number | null
   total_with_iva: number | null
   status: string
   notes: string | null
+  accepted_at: string | null
+  paid_at: string | null
   items: QuoteItem[]
 }
 
@@ -60,10 +63,18 @@ const DEFAULT_COMPANY: CompanyInfo = {
 }
 
 const statusLabels: Record<string, string> = {
-  draft: "Borrador", sent: "Enviada", accepted: "Aceptada", rejected: "Rechazada",
+  draft: "Borrador",
+  sent: "Enviada",
+  accepted: "Aceptada",
+  rejected: "Rechazada",
+  paid: "Pagada",
 }
-const statusVariants: Record<string, "outline" | "default" | "success" | "destructive"> = {
-  draft: "outline", sent: "default", accepted: "success", rejected: "destructive",
+const statusVariants: Record<string, "outline" | "default" | "success" | "destructive" | "secondary"> = {
+  draft: "outline",
+  sent: "default",
+  accepted: "secondary",
+  rejected: "destructive",
+  paid: "success",
 }
 
 function loadCompany(): CompanyInfo {
@@ -81,12 +92,14 @@ function saveCompany(info: CompanyInfo) {
 }
 
 export default function ClientQuoteDetailPage({ params }: { params: { id: string } }) {
+  const { toast } = useToast()
   const [quote, setQuote] = useState<ClientQuote | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [company, setCompany] = useState<CompanyInfo>(DEFAULT_COMPANY)
   const [editingCompany, setEditingCompany] = useState(false)
   const [companyDraft, setCompanyDraft] = useState<CompanyInfo>(DEFAULT_COMPANY)
+  const [updating, setUpdating] = useState(false)
 
   useEffect(() => {
     setCompany(loadCompany())
@@ -102,6 +115,33 @@ export default function ClientQuoteDetailPage({ params }: { params: { id: string
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
   }, [params.id])
+
+  async function updateStatus(newStatus: string) {
+    if (!quote) return
+    setUpdating(true)
+    try {
+      const body: Record<string, string> = {
+        status: newStatus,
+        updated_at: new Date().toISOString(),
+      }
+      if (newStatus === "accepted") body.accepted_at = new Date().toISOString()
+      if (newStatus === "paid") body.paid_at = new Date().toISOString()
+
+      const res = await fetch(`/api/client-quotes/${quote.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) throw new Error()
+      const updated = await res.json()
+      setQuote(q => q ? { ...q, ...updated } : q)
+      toast({ title: "Estado actualizado", description: `Cotización marcada como ${statusLabels[newStatus]}` })
+    } catch {
+      toast({ title: "Error", description: "No se pudo actualizar el estado", variant: "destructive" })
+    } finally {
+      setUpdating(false)
+    }
+  }
 
   const openEditCompany = () => {
     setCompanyDraft({ ...company })
@@ -136,7 +176,7 @@ export default function ClientQuoteDetailPage({ params }: { params: { id: string
     )
   }
 
-  const subtotal = quote.subtotal ?? quote.items.reduce((s, i) => s + i.sale_total, 0)
+  const subtotal = quote.subtotal_before_iva ?? quote.items.reduce((s, i) => s + i.sale_total, 0)
   const ivaAmount = quote.iva_amount ?? subtotal * (quote.iva_percentage / 100)
   const total = quote.total_with_iva ?? subtotal + ivaAmount
 
@@ -158,7 +198,7 @@ export default function ClientQuoteDetailPage({ params }: { params: { id: string
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={openEditCompany}>
             <Building2 className="h-4 w-4" />
-            Configurar empresa
+            Empresa
           </Button>
           <Button variant="outline" size="sm" onClick={() => window.print()}>
             <Printer className="h-4 w-4" />
@@ -167,11 +207,70 @@ export default function ClientQuoteDetailPage({ params }: { params: { id: string
         </div>
       </div>
 
-      {/* Documento de cotización */}
+      {/* Acciones de estado */}
+      <div className="flex items-center gap-2 mb-6 print:hidden flex-wrap">
+        {(quote.status === "draft" || quote.status === "sent") && (
+          <>
+            <Button
+              size="sm"
+              className="bg-green-600 hover:bg-green-700 text-white"
+              disabled={updating}
+              onClick={() => updateStatus("accepted")}
+            >
+              <CheckCircle className="h-4 w-4" />
+              Marcar como Aceptada
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-red-300 text-red-600 hover:bg-red-50"
+              disabled={updating}
+              onClick={() => updateStatus("rejected")}
+            >
+              <XCircle className="h-4 w-4" />
+              Rechazar
+            </Button>
+          </>
+        )}
+        {quote.status === "accepted" && (
+          <Button
+            size="sm"
+            className="bg-blue-600 hover:bg-blue-700 text-white"
+            disabled={updating}
+            onClick={() => updateStatus("paid")}
+          >
+            <DollarSign className="h-4 w-4" />
+            Marcar como Pagada
+          </Button>
+        )}
+        {quote.status === "paid" && (
+          <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 px-3 py-1.5 rounded-md border border-green-200">
+            <DollarSign className="h-4 w-4" />
+            Pago recibido
+            {quote.paid_at && (
+              <span className="text-muted-foreground">
+                — {new Date(quote.paid_at).toLocaleDateString("es-CO")}
+              </span>
+            )}
+          </div>
+        )}
+        {quote.status === "rejected" && (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={updating}
+            onClick={() => updateStatus("draft")}
+          >
+            Volver a Borrador
+          </Button>
+        )}
+      </div>
+
+      {/* Documento */}
       <Card className="shadow-md print:shadow-none">
         <CardContent className="p-8 space-y-8">
 
-          {/* Encabezado: empresa y número cotización */}
+          {/* Encabezado */}
           <div className="flex justify-between items-start">
             <div>
               <h2 className="text-2xl font-bold text-foreground">{company.name}</h2>
@@ -199,7 +298,7 @@ export default function ClientQuoteDetailPage({ params }: { params: { id: string
 
           <hr />
 
-          {/* Datos del cliente y vigencia */}
+          {/* Cliente y vigencia */}
           <div className="grid grid-cols-2 gap-6">
             <div>
               <p className="text-xs text-muted-foreground uppercase tracking-widest mb-2">Cliente</p>
@@ -221,6 +320,18 @@ export default function ClientQuoteDetailPage({ params }: { params: { id: string
                 <span className="text-muted-foreground">Vence: </span>
                 {new Date(new Date(quote.quote_date).getTime() + quote.validity_days * 86400000).toLocaleDateString("es-CO")}
               </p>
+              {quote.accepted_at && (
+                <p className="text-sm">
+                  <span className="text-muted-foreground">Aceptada: </span>
+                  {new Date(quote.accepted_at).toLocaleDateString("es-CO")}
+                </p>
+              )}
+              {quote.paid_at && (
+                <p className="text-sm text-green-700 font-medium">
+                  <span className="text-muted-foreground font-normal">Pagada: </span>
+                  {new Date(quote.paid_at).toLocaleDateString("es-CO")}
+                </p>
+              )}
             </div>
           </div>
 
@@ -272,7 +383,6 @@ export default function ClientQuoteDetailPage({ params }: { params: { id: string
             </div>
           </div>
 
-          {/* Notas */}
           {quote.notes && (
             <div className="bg-muted/40 rounded-lg p-4">
               <p className="text-xs text-muted-foreground uppercase tracking-widest mb-1">Notas</p>
@@ -282,7 +392,7 @@ export default function ClientQuoteDetailPage({ params }: { params: { id: string
         </CardContent>
       </Card>
 
-      {/* Dialog configurar empresa */}
+      {/* Dialog empresa */}
       <Dialog open={editingCompany} onOpenChange={setEditingCompany}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -294,44 +404,23 @@ export default function ClientQuoteDetailPage({ params }: { params: { id: string
           <div className="space-y-4 py-2">
             <div className="space-y-2">
               <Label>Nombre de la empresa *</Label>
-              <Input
-                value={companyDraft.name}
-                onChange={e => setCompanyDraft(d => ({ ...d, name: e.target.value }))}
-                placeholder="Acme Estudio"
-              />
+              <Input value={companyDraft.name} onChange={e => setCompanyDraft(d => ({ ...d, name: e.target.value }))} placeholder="Acme Estudio" />
             </div>
             <div className="space-y-2">
               <Label>Email</Label>
-              <Input
-                type="email"
-                value={companyDraft.email}
-                onChange={e => setCompanyDraft(d => ({ ...d, email: e.target.value }))}
-                placeholder="contacto@empresa.com"
-              />
+              <Input type="email" value={companyDraft.email} onChange={e => setCompanyDraft(d => ({ ...d, email: e.target.value }))} placeholder="contacto@empresa.com" />
             </div>
             <div className="space-y-2">
               <Label>Teléfono</Label>
-              <Input
-                value={companyDraft.phone}
-                onChange={e => setCompanyDraft(d => ({ ...d, phone: e.target.value }))}
-                placeholder="300 123 4567"
-              />
+              <Input value={companyDraft.phone} onChange={e => setCompanyDraft(d => ({ ...d, phone: e.target.value }))} placeholder="300 123 4567" />
             </div>
             <div className="space-y-2">
               <Label>Ciudad</Label>
-              <Input
-                value={companyDraft.city}
-                onChange={e => setCompanyDraft(d => ({ ...d, city: e.target.value }))}
-                placeholder="Bogotá, Colombia"
-              />
+              <Input value={companyDraft.city} onChange={e => setCompanyDraft(d => ({ ...d, city: e.target.value }))} placeholder="Bogotá, Colombia" />
             </div>
             <div className="space-y-2">
               <Label>Dirección</Label>
-              <Input
-                value={companyDraft.address}
-                onChange={e => setCompanyDraft(d => ({ ...d, address: e.target.value }))}
-                placeholder="Calle 123 # 45-67"
-              />
+              <Input value={companyDraft.address} onChange={e => setCompanyDraft(d => ({ ...d, address: e.target.value }))} placeholder="Calle 123 # 45-67" />
             </div>
           </div>
           <DialogFooter>
