@@ -24,6 +24,6 @@ export async function GET(request: Request) {
   if (categoryId) query = query.eq("category_id", categoryId)
 
   const { data, error } = await query
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json(data)
+  if (error) return NextResponse.json({ error: error.message, url: process.env.NEXT_PUBLIC_SUPABASE_URL }, { status: 500 })
+  return NextResponse.json({ items: data, _debug: { url: process.env.NEXT_PUBLIC_SUPABASE_URL, count: data?.length } })
 }
