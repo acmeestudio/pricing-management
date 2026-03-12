@@ -11,7 +11,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
-import { Plus, FileText, Loader2, Trash2 } from "lucide-react"
+import { Plus, FileText, Loader2, Trash2, Pencil } from "lucide-react"
 import { formatCOP } from "@/lib/pricing"
 
 interface SupplierQuote {
@@ -163,6 +163,11 @@ export default function SupplierQuotesPage() {
                     <TableCell className="flex items-center gap-1">
                       <Button variant="ghost" size="sm" asChild>
                         <Link href={`/supplier-quotes/${q.id}`}>Ver</Link>
+                      </Button>
+                      <Button variant="ghost" size="sm" asChild>
+                        <Link href={`/supplier-quotes/${q.id}/edit`}>
+                          <Pencil className="h-4 w-4" />
+                        </Link>
                       </Button>
                       <Button
                         variant="ghost"

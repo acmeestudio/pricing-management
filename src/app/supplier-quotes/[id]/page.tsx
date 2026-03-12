@@ -10,7 +10,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table"
 import { formatCOP, getPriorityBadge } from "@/lib/pricing"
-import { ArrowLeft, FileText, CheckCircle2 } from "lucide-react"
+import { ArrowLeft, FileText, CheckCircle2, Pencil } from "lucide-react"
 
 interface QuoteItem {
   id: string
@@ -92,6 +92,12 @@ export default function SupplierQuoteDetailPage() {
             {quote.supplier?.name || "Sin proveedor"} · {new Date(quote.quote_date).toLocaleDateString("es-CO")}
           </p>
         </div>
+        <Button variant="outline" size="sm" asChild>
+          <Link href={`/supplier-quotes/${quote.id}/edit`}>
+            <Pencil className="h-4 w-4 mr-2" />
+            Editar
+          </Link>
+        </Button>
       </div>
 
       {/* Info cards */}

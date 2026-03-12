@@ -113,6 +113,7 @@ export default function NewSupplierQuotePage() {
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>("")
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [categories, setCategories] = useState<Category[]>([])
+  const [defaultCategoryId, setDefaultCategoryId] = useState<string>("")
   const [quoteDate, setQuoteDate] = useState(new Date().toISOString().split("T")[0])
   const [expiryDate, setExpiryDate] = useState("")
   const [quoteReference, setQuoteReference] = useState("")
@@ -142,6 +143,14 @@ export default function NewSupplierQuotePage() {
     setQuoteDate(new Date().toISOString().split("T")[0])
     setExpiryDate("")
     setQuoteReference("")
+    setDefaultCategoryId("")
+  }
+
+  const applyDefaultCategory = (catId: string) => {
+    setDefaultCategoryId(catId)
+    if (catId) {
+      setItems(prev => prev.map(i => ({ ...i, category_id: catId })))
+    }
   }
 
   // --- PDF handlers ---
@@ -216,7 +225,7 @@ export default function NewSupplierQuotePage() {
     })
   }
 
-  const addRow = () => setItems(prev => [...prev, emptyItem()])
+  const addRow = () => setItems(prev => [...prev, { ...emptyItem(), category_id: defaultCategoryId || undefined }])
 
   // --- Save (shared for pdf/manual) ---
   const handleSave = async () => {
@@ -976,7 +985,7 @@ export default function NewSupplierQuotePage() {
         </Card>
 
         {/* Datos de la cotización */}
-        <div className="grid grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-5 gap-4 mb-6">
           <div className="space-y-1">
             <Label className="text-sm">Fecha cotización *</Label>
             <Input type="date" value={quoteDate} onChange={(e) => setQuoteDate(e.target.value)} />
@@ -988,6 +997,19 @@ export default function NewSupplierQuotePage() {
           <div className="space-y-1">
             <Label className="text-sm">Referencia</Label>
             <Input value={quoteReference} onChange={(e) => setQuoteReference(e.target.value)} placeholder="Ej: COT-2024-001" />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-sm">Categoría (todos los ítems)</Label>
+            <Select value={defaultCategoryId} onValueChange={applyDefaultCategory}>
+              <SelectTrigger>
+                <SelectValue placeholder="Asignar categoría..." />
+              </SelectTrigger>
+              <SelectContent>
+                {categories.map(c => (
+                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-1">
             <Label className="text-sm">Precios sin IVA</Label>
@@ -1195,7 +1217,7 @@ export default function NewSupplierQuotePage() {
         </Card>
       )}
 
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-5 gap-4 mb-6">
         <div className="space-y-1">
           <Label>Fecha de cotización</Label>
           <Input type="date" value={quoteDate} onChange={(e) => setQuoteDate(e.target.value)} />
@@ -1220,6 +1242,19 @@ export default function NewSupplierQuotePage() {
             onChange={(e) => setQuoteReference(e.target.value)}
             placeholder="Auto-detectada del PDF"
           />
+        </div>
+        <div className="space-y-1">
+          <Label>Categoría (todos los ítems)</Label>
+          <Select value={defaultCategoryId} onValueChange={applyDefaultCategory}>
+            <SelectTrigger>
+              <SelectValue placeholder="Asignar categoría..." />
+            </SelectTrigger>
+            <SelectContent>
+              {categories.map(c => (
+                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="space-y-1">
           <Label>Mostrar IVA</Label>
