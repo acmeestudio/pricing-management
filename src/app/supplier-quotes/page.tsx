@@ -81,7 +81,7 @@ export default function SupplierQuotesPage() {
         <Button asChild>
           <Link href="/supplier-quotes/new">
             <Plus className="h-4 w-4" />
-            Subir Cotización
+            Nueva Cotización
           </Link>
         </Button>
       </div>
@@ -120,7 +120,7 @@ export default function SupplierQuotesPage() {
               <Button asChild>
                 <Link href="/supplier-quotes/new">
                   <Plus className="h-4 w-4" />
-                  Subir Primera Cotización
+                  Nueva Cotización
                 </Link>
               </Button>
             </div>

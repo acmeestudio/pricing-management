@@ -4,7 +4,9 @@ export const maxDuration = 60
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import OpenAI from 'openai'
-import pdfParse from 'pdf-parse'
+import * as pdfParseModule from 'pdf-parse'
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const pdfParse: (buf: Buffer) => Promise<{ text: string }> = (pdfParseModule as any).default ?? pdfParseModule
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN || ''
 const TELEGRAM_API = `https://api.telegram.org/bot${TOKEN}`

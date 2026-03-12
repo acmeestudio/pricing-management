@@ -26,10 +26,11 @@ export async function createClient() {
   )
 }
 
-// Service client usa el SDK nativo para evitar problemas de tipos con @supabase/ssr
+// Service client usa el SDK nativo. fetch con cache: 'no-store' para evitar caché de Next.js
 export function createServiceClient() {
   return createSupabaseClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { global: { fetch: (url: RequestInfo | URL, opts?: RequestInit) => fetch(url, { ...opts, cache: 'no-store' }) } }
   )
 }
